@@ -1,0 +1,27 @@
+{
+  "$schema_version": "1.0",
+  "meta": {
+    "units": {
+      "short_max_ms": 350,
+      "long_min_ms": 351,
+      "long_max_ms": 900
+    },
+    "gaps": {
+      "symbol_gap_max_ms": 450,
+      "word_gap_min_ms": 1100
+    },
+    "notes": "Short/Long durations and gap thresholds may be overridden by calibration."
+  },
+  "vocab": [
+    { "word": "yes",      "pattern": "S S" },
+    { "word": "no",       "pattern": "L"   },
+    { "word": "thirsty",  "pattern": "S L" },
+    { "word": "hungry",   "pattern": "L S" },
+    { "word": "pain",     "pattern": "S S L" },
+    { "word": "tired",    "pattern": "L L" },
+    { "word": "light",    "pattern": "S S S" },
+    { "word": "temp",     "pattern": "S L L" },
+    { "word": "bored",    "pattern": "L S S" },
+    { "word": "feelings", "pattern": "L L S" }
+  ]
+}

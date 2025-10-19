@@ -1,0 +1,43 @@
+BlinkTalk Week 4 - System Architecture
+=====================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           BlinkTalk System Flow                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────┐    ┌──────────────┐    ┌─────────────┐    ┌─────────────┐
+│   Camera    │    │ Eye Tracker  │    │ Blink       │    │ Sequence    │
+│   Frames    │───▶│ (EAR Values) │───▶│ Classifier  │───▶│ Engine      │
+│             │    │              │    │ (S/L Events)│    │ (Patterns)  │
+└─────────────┘    └──────────────┘    └─────────────┘    └─────────────┘
+                                                                    │
+                                                                    ▼
+┌─────────────┐    ┌──────────────┐    ┌─────────────┐    ┌─────────────┐
+│ Translation │◀───│ Translation  │◀───│ Gap         │◀───│ Word        │
+│ API Response│    │ API          │    │ Detection   │    │ Completion  │
+│             │    │              │    │             │    │             │
+└─────────────┘    └──────────────┘    └─────────────┘    └─────────────┘
+
+API Endpoints:
+├── GET  /api/translation          - Get completed word
+├── POST /api/translation/process_ear - Process EAR data
+├── POST /api/translation/reset    - Reset state
+├── POST /api/frame/process        - Complete pipeline
+└── GET  /api/health              - Health check
+
+Vocabulary Patterns (sequences_v1.json):
+├── yes     → S S
+├── no      → L
+├── thirsty → S L
+├── hungry  → L S
+├── pain    → S S L
+├── tired   → L L
+├── light   → S S S
+├── temp    → S L L
+├── bored   → L S S
+└── feelings → L L S
+
+Fuzzy Matching Examples:
+├── S S S S → light (matches S S S)
+├── L L L   → tired (matches L L)
+└── S S L L → pain (matches S S L)

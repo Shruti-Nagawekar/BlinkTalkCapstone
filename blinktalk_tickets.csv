@@ -1,0 +1,37 @@
+Ticket ID,Type,Description,Technical Notes
+py-1022,Python,Define Blink Sequence Spec & Phrase Catalog (10–15 core phrases),"Create sequences.v1.json with phrase_id, phrase_text, sequence_pattern, min_confidence"
+py-1023,Python,New Python class SequenceEvent,"Dataclass with event_type, duration, timestamp; helper methods is_short/is_long"
+py-1024,Python,ServerBT.py: API contract v2 for Sequence Result,Add /sequence/decode endpoint returning phrase match + confidence
+py-1025,Python,RunBlinkTalk.py: Config plumbing & graceful startup,"CLI flags for catalog, logging; env vars"
+py-1026,Python,Unit test harness skeleton,Setup pytest with config load and event normalization tests
+sw-166,Swift,App state flow contract for sequence phrases,Define Phrase and DecodedResult models in User.swift or Models.swift
+sw-167,Swift,Networking client v2 stub,New BlinkAPIClient hitting /sequence/decode with async/await
+sw-168,Swift,Feature flagging & AppConfig,Centralize flags for sequence vs Morse UI
+py-1027,Python,Blink segmentation & normalization pipeline,Convert raw events to short/long using thresholds
+py-1028,Python,Matching engine: sequence → phrase,Exact + fuzzy match with confidence
+py-1029,Python,FinalBT.py: SequenceDecoder class,Replace MorseDecoder with SequenceDecoder; strategy pattern
+py-1030,Python,ServerBT.py: Real-time streaming endpoint,Add /sequence/stream SSE for partial updates
+sw-169,Swift,CameraView: emit blink events,Delegate computes on/off durations; forwards events
+sw-170,Swift,HomePage: Decoded phrase banner,Show first decoded result as banner
+sw-171,Swift,TranslationResultView: Sequence result layout,"Replace Morse with phrase, confidence, speak button"
+py-1031,Python,Catalog tooling & validation,CLI to check duplicates and thresholds
+py-1032,Python,Confidence smoothing & debouncing,Temporal filter before emitting results
+py-1033,Python,Synthetic data generator,Random blink streams for tests
+sw-172,Swift,Phrase Library view,List phrases and patterns
+sw-173,Swift,Session controls,Start/Stop/Retry capture
+sw-174,Swift,Text-to-Speech for decoded phrase,AVSpeechSynthesizer integration
+sw-175,Swift,Offline mock mode,Map taps to phrases for demos
+py-1034,Python,Performance profiling,Profile SequenceDecoder for sub-50ms
+py-1035,Python,Error taxonomy & structured logging,"Standardize error codes, JSON logs"
+py-1036,Python,CI pipeline,GitHub Actions with lint/test
+sw-176,Swift,Low-light handling,"Exposure/ISO tips, quality meter"
+sw-177,Swift,Network resilience,"Retry policy, offline queueing"
+sw-178,Swift,Crash & event telemetry,"Log decode durations, errors"
+sw-179,Swift,UI accessibility pass,"VoiceOver labels, larger buttons"
+py-1037,Python,Dockerize backend,Dockerfile + Makefile
+py-1038,Python,Load/soak tests,"Async clients, throughput measurement"
+py-1039,Python,Release notes & runbook,Operator docs
+sw-180,Swift,Build configuration & signing,Schemes for demo release
+sw-181,Swift,First-run onboarding tutorial,Skippable carousel of tips
+sw-182,Swift,In-app feedback & log export,Export session logs via ShareSheet
+sw-183,Swift,User guide docs,docs/user_guide.md with screenshots

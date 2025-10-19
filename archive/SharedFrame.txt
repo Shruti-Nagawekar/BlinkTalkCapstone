@@ -1,0 +1,6 @@
+gap = t_ms - last_open_time
+if gap >= cfg.commit_gap_ms:
+    _finalize_symbol()         # push last token if present
+    _emit_word_and_reset()     # lookup vocab, speak/display, clear buffers
+elif gap >= cfg.token_gap_ms:
+    _finalize_symbol()         # just separate tokens within same word

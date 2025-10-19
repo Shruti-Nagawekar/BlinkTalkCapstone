@@ -1,0 +1,28 @@
+      ┌──────────────┐
+      │   OPEN EYE   │
+      └──────┬───────┘
+             │ EAR < threshold
+             ▼
+      ┌──────────────┐
+      │  CLOSED EYE  │
+      └──────┬───────┘
+             │ measure closed duration
+             │ classify → Short(S) / Long(L)
+             ▼
+      ┌──────────────┐
+      │   GAP TIMER  │  (time since eyes reopened)
+      └──────┬───────┘
+             │
+    ┌────────┴───────────────┐
+    │                         │
+gap ≥ token_gap_ms            gap ≥ commit_gap_ms
+→ finalize token (S/L)        → emit word (lookup JSON) + reset
+  and wait next blink           (clear buffers, start fresh)
+
+
+gap = t_ms - last_open_time
+if gap >= cfg.commit_gap_ms:
+    _finalize_symbol()         # push last token if present
+    _emit_word_and_reset()     # lookup vocab, speak/display, clear buffers
+elif gap >= cfg.token_gap_ms:
+    _finalize_symbol()         # just separate tokens within same word
