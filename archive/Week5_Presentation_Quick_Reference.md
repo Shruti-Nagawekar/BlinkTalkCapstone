@@ -8,23 +8,29 @@
 ### **Problem Solved**
 - Different users have different blink patterns and timing
 - One-size-fits-all approach doesn't work for assistive communication
-- Created calibration profiles to accommodate user diversity
+- Created interactive calibration system to accommodate user diversity
+- **New**: iPhone 15 optimized, black screen interface to avoid disorientation
 
 ### **Technical Innovation**
-- **Real-time Switching**: Profile changes take effect immediately
-- **Thread Safety**: Multiple users can switch profiles safely
-- **Dynamic Thresholds**: Blink detection adapts without restart
-- **Comprehensive API**: Complete calibration management
+- **Interactive Calibration**: White screen flashes, visual cues, smart recommendations
+- **Profile Management**: Save named profiles for quick future access
+- **Black Screen Interface**: No disorienting camera view, just sequence display
+- **iPhone 15 Focus**: Optimized for single device target
+- **Smart Recommendations**: System analyzes results and suggests optimal profile
 
 ---
 
 ## 📊 **Demo Script (7 minutes)**
 
-### **1. Show Calibration Profiles (1 min)**
-```bash
-# Display the two profiles and their differences
-Slow Profile:   500ms short, 1200ms long, 600ms symbol gap, 1500ms word gap
-Medium Profile: 350ms short, 900ms long, 450ms symbol gap, 1100ms word gap
+### **1. Show Interactive Calibration Flow (1 min)**
+```
+Interactive Calibration Process:
+1. White screen flash → "Calibration Test Starting"
+2. "Blink slowly" → Record slow blink values (3x)
+3. "Blink quickly" → Record fast blink values (3x)
+4. Show measured values → Recommend Slow/Medium profile
+5. User choice: Accept recommendation OR Choose custom
+6. Save profile with name → Quick future access
 ```
 
 ### **2. API Demo (2 min)**
