@@ -357,5 +357,299 @@ class TestCalibrationIntegration:
             assert gaps[0].gap_type == GapType.SYMBOL_GAP
 
 
+class TestCustomCalibration:
+    """Test custom calibration functionality."""
+    
+    def setup_method(self):
+        """Set up test environment."""
+        reset_calibration_manager()
+    
+    def test_set_custom_profile_valid(self):
+        """Test setting a valid custom profile."""
+        manager = CalibrationManager()
+        
+        # Set custom profile with valid values
+        success = manager.set_custom_profile(
+            short_max_ms=400,
+            long_min_ms=401,
+            long_max_ms=1000,
+            symbol_gap_max_ms=500,
+            word_gap_min_ms=1200
+        )
+        
+        assert success is True
+        assert manager.get_custom_profile() is not None
+        assert manager.get_custom_profile().name == "custom"
+        assert manager.get_custom_profile().short_max_ms == 400
+        assert manager.get_custom_profile().is_custom is True
+    
+    def test_set_custom_profile_invalid_ranges(self):
+        """Test setting custom profile with invalid ranges."""
+        manager = CalibrationManager()
+        
+        # Test invalid short_max_ms (too low)
+        success = manager.set_custom_profile(
+            short_max_ms=50,  # Too low
+            long_min_ms=401,
+            long_max_ms=1000,
+            symbol_gap_max_ms=500,
+            word_gap_min_ms=1200
+        )
+        assert success is False
+        
+        # Test invalid short_max_ms (too high)
+        success = manager.set_custom_profile(
+            short_max_ms=3000,  # Too high
+            long_min_ms=401,
+            long_max_ms=1000,
+            symbol_gap_max_ms=500,
+            word_gap_min_ms=1200
+        )
+        assert success is False
+        
+        # Test invalid long_min_ms (too low)
+        success = manager.set_custom_profile(
+            short_max_ms=400,
+            long_min_ms=100,  # Too low
+            long_max_ms=1000,
+            symbol_gap_max_ms=500,
+            word_gap_min_ms=1200
+        )
+        assert success is False
+    
+    def test_set_custom_profile_logical_validation(self):
+        """Test custom profile logical validation."""
+        manager = CalibrationManager()
+        
+        # Test short_max_ms >= long_min_ms (invalid)
+        success = manager.set_custom_profile(
+            short_max_ms=500,
+            long_min_ms=400,  # Less than short_max_ms
+            long_max_ms=1000,
+            symbol_gap_max_ms=500,
+            word_gap_min_ms=1200
+        )
+        assert success is False
+        
+        # Test long_min_ms >= long_max_ms (invalid)
+        success = manager.set_custom_profile(
+            short_max_ms=400,
+            long_min_ms=1000,
+            long_max_ms=500,  # Less than long_min_ms
+            symbol_gap_max_ms=500,
+            word_gap_min_ms=1200
+        )
+        assert success is False
+        
+        # Test symbol_gap_max_ms >= word_gap_min_ms (invalid)
+        success = manager.set_custom_profile(
+            short_max_ms=400,
+            long_min_ms=401,
+            long_max_ms=1000,
+            symbol_gap_max_ms=1500,  # Greater than word_gap_min_ms
+            word_gap_min_ms=1200
+        )
+        assert success is False
+    
+    def test_switch_to_custom_profile(self):
+        """Test switching to custom profile."""
+        manager = CalibrationManager()
+        
+        # Set custom profile
+        manager.set_custom_profile(
+            short_max_ms=400,
+            long_min_ms=401,
+            long_max_ms=1000,
+            symbol_gap_max_ms=500,
+            word_gap_min_ms=1200
+        )
+        
+        # Switch to custom profile
+        success = manager.set_profile("custom")
+        assert success is True
+        assert manager.get_active_profile() == "custom"
+        
+        # Check thresholds are updated
+        thresholds = manager.get_thresholds()
+        assert thresholds["short_max_ms"] == 400
+        assert thresholds["long_min_ms"] == 401
+        assert thresholds["long_max_ms"] == 1000
+        assert thresholds["symbol_gap_max_ms"] == 500
+        assert thresholds["word_gap_min_ms"] == 1200
+    
+    def test_switch_to_custom_profile_not_set(self):
+        """Test switching to custom profile when none is set."""
+        manager = CalibrationManager()
+        
+        # Try to switch to custom profile without setting one
+        success = manager.set_profile("custom")
+        assert success is False
+        assert manager.get_active_profile() == "medium"  # Should remain unchanged
+    
+    def test_get_custom_profile_info(self):
+        """Test getting custom profile information."""
+        manager = CalibrationManager()
+        
+        # Set custom profile
+        manager.set_custom_profile(
+            short_max_ms=400,
+            long_min_ms=401,
+            long_max_ms=1000,
+            symbol_gap_max_ms=500,
+            word_gap_min_ms=1200
+        )
+        
+        # Get custom profile info
+        info = manager.get_profile_info("custom")
+        assert info is not None
+        assert info["name"] == "custom"
+        assert info["description"] == "Custom calibration profile"
+        assert info["is_custom"] is True
+        assert info["thresholds"]["short_max_ms"] == 400
+        assert info["thresholds"]["long_min_ms"] == 401
+        assert info["thresholds"]["long_max_ms"] == 1000
+        assert info["thresholds"]["symbol_gap_max_ms"] == 500
+        assert info["thresholds"]["word_gap_min_ms"] == 1200
+    
+    def test_get_custom_profile_info_not_set(self):
+        """Test getting custom profile info when none is set."""
+        manager = CalibrationManager()
+        
+        info = manager.get_profile_info("custom")
+        assert info is None
+    
+    def test_available_profiles_includes_custom(self):
+        """Test that available profiles includes custom when set."""
+        manager = CalibrationManager()
+        
+        # Initially no custom profile
+        profiles = manager.get_available_profiles()
+        assert "custom" not in profiles
+        
+        # Set custom profile
+        manager.set_custom_profile(
+            short_max_ms=400,
+            long_min_ms=401,
+            long_max_ms=1000,
+            symbol_gap_max_ms=500,
+            word_gap_min_ms=1200
+        )
+        
+        # Now custom should be available
+        profiles = manager.get_available_profiles()
+        assert "custom" in profiles
+        assert profiles["custom"] == "Custom calibration profile"
+    
+    def test_clear_custom_profile(self):
+        """Test clearing custom profile."""
+        manager = CalibrationManager()
+        
+        # Set custom profile and switch to it
+        manager.set_custom_profile(
+            short_max_ms=400,
+            long_min_ms=401,
+            long_max_ms=1000,
+            symbol_gap_max_ms=500,
+            word_gap_min_ms=1200
+        )
+        manager.set_profile("custom")
+        
+        # Clear custom profile
+        manager.clear_custom_profile()
+        
+        # Should switch back to medium
+        assert manager.get_active_profile() == "medium"
+        assert manager.get_custom_profile() is None
+        
+        # Custom should not be available
+        profiles = manager.get_available_profiles()
+        assert "custom" not in profiles
+    
+    def test_custom_profile_validation_edge_cases(self):
+        """Test custom profile validation with edge case values."""
+        manager = CalibrationManager()
+        
+        # Test minimum valid values
+        success = manager.set_custom_profile(
+            short_max_ms=100,  # Minimum
+            long_min_ms=200,    # Minimum
+            long_max_ms=500,    # Minimum
+            symbol_gap_max_ms=200,  # Minimum
+            word_gap_min_ms=500     # Minimum
+        )
+        assert success is True
+        
+        # Test maximum valid values
+        success = manager.set_custom_profile(
+            short_max_ms=2000,  # Maximum
+            long_min_ms=3000,   # Maximum
+            long_max_ms=5000,   # Maximum
+            symbol_gap_max_ms=2000,  # Maximum
+            word_gap_min_ms=5000     # Maximum
+        )
+        assert success is True
+    
+    def test_custom_profile_stats(self):
+        """Test custom profile in statistics."""
+        manager = CalibrationManager()
+        
+        # Initially no custom profile
+        stats = manager.get_stats()
+        assert stats["has_custom_profile"] is False
+        
+        # Set custom profile
+        manager.set_custom_profile(
+            short_max_ms=400,
+            long_min_ms=401,
+            long_max_ms=1000,
+            symbol_gap_max_ms=500,
+            word_gap_min_ms=1200
+        )
+        
+        # Check stats include custom profile
+        stats = manager.get_stats()
+        assert stats["has_custom_profile"] is True
+        assert "custom" in stats["available_profiles"]
+    
+    def test_custom_profile_thread_safety(self):
+        """Test thread safety with custom profiles."""
+        manager = CalibrationManager()
+        results = []
+        errors = []
+        
+        def set_custom_profile():
+            try:
+                success = manager.set_custom_profile(
+                    short_max_ms=400,
+                    long_min_ms=401,
+                    long_max_ms=1000,
+                    symbol_gap_max_ms=500,
+                    word_gap_min_ms=1200
+                )
+                results.append(success)
+            except Exception as e:
+                errors.append(e)
+        
+        # Create multiple threads
+        threads = []
+        for _ in range(5):
+            thread = threading.Thread(target=set_custom_profile)
+            threads.append(thread)
+            thread.start()
+        
+        # Wait for all threads to complete
+        for thread in threads:
+            thread.join()
+        
+        # Check for errors
+        assert len(errors) == 0, f"Thread safety errors: {errors}"
+        
+        # At least one should succeed
+        assert any(results)
+        
+        # Custom profile should be set
+        assert manager.get_custom_profile() is not None
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
