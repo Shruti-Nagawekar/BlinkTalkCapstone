@@ -15,11 +15,106 @@ This document outlines the work plan for the next 5 weeks, dividing tasks betwee
 - Comprehensive test suite
 - Health monitoring
 
-### ❌ **Swift Frontend - NOT STARTED**
-- Empty `sw/` directory
-- No SwiftUI app structure
-- No networking layer
-- No camera integration
+### 🟡 **Swift Frontend - PARTIALLY IMPLEMENTED**
+
+#### ✅ **Completed Swift Components:**
+- SwiftUI app structure with navigation flow
+- Camera integration with AVFoundation
+- Object detection with Vision framework
+- Core Data integration for user profiles
+- Basic UI with server URL configuration
+- Camera preview with frame rate display
+- IntroView, HomeView, ContentView implemented
+
+#### ❌ **Missing Critical Components:**
+- No networking layer (APIClient, Services)
+- No API models matching Python backend
+- No calibration API integration
+- No frame streaming to backend
+- No translation polling system
+- No result display view
+
+---
+
+## 🚨 **IMMEDIATE NEXT STEPS** (Current Priority)
+
+Based on the current project status, here's what needs to be done **right now**:
+
+### **Critical Missing Components:**
+1. **Networking Layer** - Create `sw/Services/APIClient.swift` and related files
+2. **API Models** - Create Swift structs matching Python API endpoints
+3. **Calibration Integration** - Connect Swift app to Python calibration API
+4. **Frame Streaming** - Send camera frames to Python backend
+5. **Translation Polling** - Implement translation result polling
+6. **Result Display** - Create view to show translation results
+
+### **Recommended Starting Point:**
+Start with **Week 1 tasks** - focus on creating the networking layer and API integration, as this is the foundation for everything else.
+
+---
+
+## 📱 **DEVICE SPECIFICATIONS & USER EXPERIENCE**
+
+### **Target Device: iPhone 15 Only**
+- Optimize all development for iPhone 15 specifications
+- Test exclusively on iPhone 15 hardware
+- Utilize iPhone 15 specific camera capabilities
+
+### **User Experience Requirements:**
+- **No Camera View**: Remove live camera preview to avoid disorientation
+- **Black Screen Interface**: Display sequence on black background
+- **Calibration Test Flow**: Interactive calibration with visual feedback
+- **Profile Management**: Save user profiles with custom settings
+
+---
+
+## 🧪 **DETAILED CALIBRATION TEST FLOW**
+
+### **Interactive Calibration Process:**
+
+1. **Test Initiation**
+   - White screen flash (2 seconds) to indicate test start
+   - Clear instruction: "Calibration Test Starting"
+   - Countdown: "3... 2... 1... Begin"
+
+2. **Slow Blink Test**
+   - Instruction: "Blink slowly when you see the cue"
+   - Visual cue: Brief white flash
+   - Record blink duration and intensity
+   - Repeat 3 times for accuracy
+   - Calculate average slow blink values
+
+3. **Fast Blink Test**
+   - Instruction: "Blink quickly when you see the cue"
+   - Visual cue: Brief white flash
+   - Record blink duration and intensity
+   - Repeat 3 times for accuracy
+   - Calculate average fast blink values
+
+4. **Results Display & Recommendation**
+   - Show measured values to user
+   - Display recommendation: "Based on your results, we recommend [Slow/Medium] profile"
+   - Show reasoning: "Your slow blinks average Xms, fast blinks average Yms"
+
+5. **User Choice**
+   - **Accept Recommendation**: Proceed with recommended profile
+   - **Choose Custom**: Show custom input fields with measured values as reference
+
+6. **Custom Input (if chosen)**
+   - Display measured values as reference
+   - Input fields for custom thresholds
+   - Validation for reasonable ranges
+   - Preview of custom settings
+
+7. **Profile Saving**
+   - Name input field
+   - Save profile with all settings
+   - Confirmation: "Profile saved successfully"
+
+8. **Profile Selection**
+   - List of saved profiles
+   - One-click selection for future use
+   - Quick setup for returning users
 
 ---
 
@@ -59,48 +154,68 @@ This document outlines the work plan for the next 5 weeks, dividing tasks betwee
 - All existing functionality still works
 
 ### 🍎 **Swift Developer Tasks**
-**Goal**: Create basic SwiftUI app structure and navigation
+**Goal**: Create networking layer and API integration
 
-#### Tasks:
-1. **Create App Structure** (`sw/`)
+#### ✅ **COMPLETED:**
+- SwiftUI app structure with navigation flow
+- Camera integration with AVFoundation
+- Basic UI layouts and navigation
+- Core Data integration for user profiles
+
+#### 🚧 **CURRENT TASKS:**
+1. **Create Networking Layer** (`sw/Services/`)
    ```
-   sw/
-   ├── BlinkTalkApp/
-   │   ├── BlinkTalkApp.swift          # Main app entry point
-   │   ├── ContentView.swift           # Root navigation view
-   │   └── Views/
-   │       ├── HomeView.swift          # Welcome screen
-   │       ├── CalibrationView.swift   # Profile selection + custom input
-   │       ├── CameraView.swift        # Camera streaming (placeholder)
-   │       └── ResultView.swift        # Translation result display
+   sw/Services/
+   ├── APIClient.swift              # Base networking client
+   ├── Models/
+   │   ├── CalibrationModels.swift  # Request/response models
+   │   ├── TranslationModels.swift  # Translation models
+   │   └── VocabularyModels.swift   # Vocabulary models
+   └── Endpoints/
+       ├── CalibrationEndpoint.swift
+       ├── TranslationEndpoint.swift
+       └── VocabularyEndpoint.swift
    ```
 
-2. **Implement Navigation Flow**
-   - Home → Calibration → Camera → Result
-   - NavigationView with proper state management
-   - Basic UI layouts for each screen
+2. **Implement API Models**
+   - Create Swift structs matching Python API
+   - Add JSON encoding/decoding
+   - Handle error responses
 
-3. **Create CalibrationView**
-   - Radio buttons for slow/medium/custom profiles
-   - Custom input fields (when custom selected)
-   - Input validation for custom thresholds
-   - Navigation to CameraView
+3. **Create Interactive CalibrationView**
+   - **Calibration Test Flow**:
+     - White screen flash to indicate test start
+     - "Blink slowly" instruction with visual cue
+     - Record slow blink values
+     - "Blink quickly" instruction with visual cue  
+     - Record fast blink values
+     - Display measured values to user
+     - Recommend slow/medium profile based on results
+     - Allow user to accept recommendation or choose custom
+   - **Custom Input Flow**:
+     - If user denies recommendation, show custom input fields
+     - Display their measured values as reference
+     - Allow manual threshold input with validation
+   - **Profile Management**:
+     - Name input field for saving profile
+     - Save profile with all settings
+     - Profile selection for future use
 
 #### Deliverables:
-- Complete SwiftUI app structure
-- Navigation between all screens
-- CalibrationView with profile selection
-- Custom threshold input UI
+- Complete networking layer
+- API models and endpoints
+- CalibrationView with backend integration
+- Error handling and loading states
 
 #### Acceptance Criteria:
-- App builds and runs without errors
-- Can navigate between all screens
-- CalibrationView shows profile options
-- Custom input fields appear when "custom" selected
+- Can make API calls to Python backend
+- CalibrationView successfully sets profiles
+- Error handling works properly
+- Loading states show during API calls
 
 ---
 
-## Week 2: Networking & API Integration
+## Week 2: Frame Streaming & Camera Integration
 
 ### 🐍 **Python Developer Tasks**
 **Goal**: Enhance backend for better Swift integration
@@ -128,109 +243,51 @@ This document outlines the work plan for the next 5 weeks, dividing tasks betwee
 - Updated API documentation
 
 ### 🍎 **Swift Developer Tasks**
-**Goal**: Implement networking layer and API integration
+**Goal**: Implement frame streaming and camera integration
 
-#### Tasks:
-1. **Create Networking Layer** (`sw/Services/`)
-   ```
-   sw/Services/
-   ├── APIClient.swift              # Base networking client
-   ├── Models/
-   │   ├── CalibrationModels.swift  # Request/response models
-   │   ├── TranslationModels.swift  # Translation models
-   │   └── VocabularyModels.swift   # Vocabulary models
-   └── Endpoints/
-       ├── CalibrationEndpoint.swift
-       ├── TranslationEndpoint.swift
-       └── VocabularyEndpoint.swift
-   ```
-
-2. **Implement API Models**
-   - Create Swift structs matching Python API
-   - Add JSON encoding/decoding
-   - Handle error responses
-
-3. **Update CalibrationView**
-   - Integrate with calibration API
-   - Handle API responses and errors
-   - Show loading states
-
-#### Deliverables:
-- Complete networking layer
+#### ✅ **COMPLETED:**
+- Basic networking layer (if completed in Week 1)
 - API models and endpoints
-- CalibrationView integrated with backend
-- Error handling and loading states
+- CalibrationView with backend integration
 
-#### Acceptance Criteria:
-- Can make API calls to Python backend
-- CalibrationView successfully sets profiles
-- Error handling works properly
-- Loading states show during API calls
+#### 🚧 **CURRENT TASKS:**
+1. **Create Black Screen Interface** (`sw/Views/BlinkDetectionView.swift`)
+   - Remove camera preview (background processing only)
+   - Black screen with sequence display
+   - Show detected sequence in real-time
+   - iPhone 15 optimized camera integration
 
----
-
-## Week 3: Camera Integration & Frame Streaming
-
-### 🐍 **Python Developer Tasks**
-**Goal**: Optimize frame processing for Swift integration
-
-#### Tasks:
-1. **Enhance Frame Processing**
-   - Optimize frame buffer for Swift streaming
-   - Add frame validation and error handling
-   - Improve logging for frame processing
-
-2. **Add Frame Statistics**
-   - Track frame processing metrics
-   - Add performance monitoring
-   - Log frame processing times
-
-3. **Update Documentation**
-   - Document frame API usage
-   - Add Swift integration examples
-   - Update API documentation
-
-#### Deliverables:
-- Optimized frame processing
-- Frame statistics and monitoring
-- Updated documentation
-
-### 🍎 **Swift Developer Tasks**
-**Goal**: Implement camera streaming and frame processing
-
-#### Tasks:
-1. **Create CameraView** (`sw/Views/CameraView.swift`)
-   - AVFoundation camera integration
-   - Frame capture and processing
+2. **Implement Background Frame Streaming**
+   - Camera runs in background (no preview)
+   - Frame streaming to Python backend
    - Base64 encoding for API transmission
    - Frame rate control (5-10 FPS)
+   - iPhone 15 specific optimizations
 
-2. **Implement Frame Streaming**
-   - Background frame processing
-   - API integration for frame upload
-   - Error handling for camera issues
-   - Frame compression and optimization
-
-3. **Add Camera Permissions**
+3. **Add Camera Permissions & Error Handling**
    - Request camera permissions
    - Handle permission denials
    - Show appropriate error messages
+   - Background camera operation
 
 #### Deliverables:
-- Working camera integration
-- Frame streaming to backend
-- Permission handling
-- Error states for camera issues
+- Black screen interface with sequence display
+- Background camera processing (no preview)
+- Frame streaming to Python backend
+- iPhone 15 optimized performance
+- Permission handling and error states
 
 #### Acceptance Criteria:
-- Camera view shows live preview
+- Black screen shows detected sequence in real-time
+- Camera operates in background without preview
 - Frames are captured and sent to backend
 - Handles camera permission requests
 - Error handling for camera failures
+- iPhone 15 specific optimizations working
 
 ---
 
-## Week 4: Translation Integration & Real-time Processing
+## Week 3: Translation Integration & Real-time Processing
 
 ### 🐍 **Python Developer Tasks**
 **Goal**: Ensure translation pipeline works with Swift integration
@@ -259,7 +316,11 @@ This document outlines the work plan for the next 5 weeks, dividing tasks betwee
 ### 🍎 **Swift Developer Tasks**
 **Goal**: Implement translation polling and result display
 
-#### Tasks:
+#### ✅ **COMPLETED:**
+- Camera integration with frame streaming
+- Frame processing and backend communication
+
+#### 🚧 **CURRENT TASKS:**
 1. **Implement Translation Polling**
    - Poll `/api/translation` every 2 seconds
    - 10-second overall timeout
@@ -292,7 +353,7 @@ This document outlines the work plan for the next 5 weeks, dividing tasks betwee
 
 ---
 
-## Week 5: Integration & Polish
+## Week 4: Integration & Polish
 
 ### 🤝 **Both Developers - Integration Tasks**
 **Goal**: Integrate Swift and Python components
@@ -322,8 +383,34 @@ This document outlines the work plan for the next 5 weeks, dividing tasks betwee
 - Error handling implemented
 - User experience polished
 
+---
+
+## Week 5: Production Readiness & Deployment
+
+### 🤝 **Both Developers - Final Integration**
+**Goal**: Production-ready application
+
+#### Tasks:
+1. **Final Integration Testing**
+   - Complete end-to-end testing
+   - Performance optimization
+   - Bug fixes and polish
+   - User acceptance testing
+
+2. **Production Configuration**
+   - Environment setup
+   - Security hardening
+   - Performance monitoring
+   - Error tracking
+
+#### Deliverables:
+- Production-ready application
+- Complete testing suite
+- Deployment configuration
+- Documentation
+
 ### 🐍 **Python Developer - Final Tasks**
-**Goal**: Production readiness
+**Goal**: Production backend deployment
 
 #### Tasks:
 1. **Production Configuration**
