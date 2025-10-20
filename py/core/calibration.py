@@ -20,6 +20,7 @@ class CalibrationProfile:
     symbol_gap_max_ms: int
     word_gap_min_ms: int
     description: str
+    is_custom: bool = False  # Flag to identify custom profiles
 
 class CalibrationManager:
     """
@@ -60,6 +61,7 @@ class CalibrationManager:
         """
         self._lock = threading.RLock()  # Reentrant lock for thread safety
         self._active_profile = default_profile
+        self._custom_profile = None  # Store custom profile data
         
         # Validate default profile
         if default_profile not in self.CALIBRATION_PROFILES:
@@ -82,7 +84,15 @@ class CalibrationManager:
             True if profile was set successfully, False otherwise
         """
         with self._lock:
-            if profile_name not in self.CALIBRATION_PROFILES:
+            if profile_name == "custom":
+                if self._custom_profile is None:
+                    logger.error("No custom profile set")
+                    return False
+                self._active_profile = "custom"
+                self._current_thresholds = self._get_custom_thresholds()
+                logger.info("Switched to custom calibration profile")
+                return True
+            elif profile_name not in self.CALIBRATION_PROFILES:
                 logger.error(f"Invalid profile name: {profile_name}")
                 return False
             
@@ -127,10 +137,15 @@ class CalibrationManager:
             if profile_name is None:
                 profile_name = self._active_profile
             
-            if profile_name not in self.CALIBRATION_PROFILES:
+            if profile_name == "custom":
+                if self._custom_profile is None:
+                    return None
+                profile = self._custom_profile
+            elif profile_name not in self.CALIBRATION_PROFILES:
                 return None
+            else:
+                profile = self.CALIBRATION_PROFILES[profile_name]
             
-            profile = self.CALIBRATION_PROFILES[profile_name]
             return {
                 "name": profile.name,
                 "description": profile.description,
@@ -140,7 +155,8 @@ class CalibrationManager:
                     "long_max_ms": profile.long_max_ms,
                     "symbol_gap_max_ms": profile.symbol_gap_max_ms,
                     "word_gap_min_ms": profile.word_gap_min_ms
-                }
+                },
+                "is_custom": getattr(profile, 'is_custom', False)
             }
     
     def get_available_profiles(self) -> Dict[str, str]:
@@ -151,10 +167,16 @@ class CalibrationManager:
             Dictionary mapping profile names to descriptions
         """
         with self._lock:
-            return {
+            profiles = {
                 name: profile.description 
                 for name, profile in self.CALIBRATION_PROFILES.items()
             }
+            
+            # Add custom profile if it exists
+            if self._custom_profile is not None:
+                profiles["custom"] = self._custom_profile.description
+            
+            return profiles
     
     def reset_to_default(self) -> None:
         """Reset to the default profile (medium)."""
@@ -191,8 +213,138 @@ class CalibrationManager:
         Returns:
             True if profile exists, False otherwise
         """
-        return profile_name in self.CALIBRATION_PROFILES
+        return profile_name in self.CALIBRATION_PROFILES or profile_name == "custom"
     
+    def set_custom_profile(self, short_max_ms: int, long_min_ms: int, long_max_ms: int, 
+                          symbol_gap_max_ms: int, word_gap_min_ms: int) -> bool:
+        """
+        Set custom calibration thresholds.
+        
+        Args:
+            short_max_ms: Maximum duration for short blinks
+            long_min_ms: Minimum duration for long blinks
+            long_max_ms: Maximum duration for long blinks
+            symbol_gap_max_ms: Maximum gap between symbols
+            word_gap_min_ms: Minimum gap between words
+            
+        Returns:
+            True if custom profile was set successfully, False otherwise
+        """
+        with self._lock:
+            # Validate threshold ranges
+            if not self._validate_custom_thresholds(short_max_ms, long_min_ms, long_max_ms, 
+                                                  symbol_gap_max_ms, word_gap_min_ms):
+                return False
+            
+            # Create custom profile
+            self._custom_profile = CalibrationProfile(
+                name="custom",
+                short_max_ms=short_max_ms,
+                long_min_ms=long_min_ms,
+                long_max_ms=long_max_ms,
+                symbol_gap_max_ms=symbol_gap_max_ms,
+                word_gap_min_ms=word_gap_min_ms,
+                description="Custom calibration profile",
+                is_custom=True
+            )
+            
+            # Update current thresholds if custom is active
+            if self._active_profile == "custom":
+                self._current_thresholds = self._get_custom_thresholds()
+            
+            logger.info(f"Custom calibration profile set: {self._custom_profile}")
+            return True
+    
+    def _validate_custom_thresholds(self, short_max_ms: int, long_min_ms: int, long_max_ms: int,
+                                  symbol_gap_max_ms: int, word_gap_min_ms: int) -> bool:
+        """
+        Validate custom threshold values for reasonable ranges.
+        
+        Args:
+            short_max_ms: Maximum duration for short blinks
+            long_min_ms: Minimum duration for long blinks
+            long_max_ms: Maximum duration for long blinks
+            symbol_gap_max_ms: Maximum gap between symbols
+            word_gap_min_ms: Minimum gap between words
+            
+        Returns:
+            True if thresholds are valid, False otherwise
+        """
+        # Basic range validation
+        if not (100 <= short_max_ms <= 2000):
+            logger.error(f"Invalid short_max_ms: {short_max_ms} (must be 100-2000)")
+            return False
+        
+        if not (200 <= long_min_ms <= 3000):
+            logger.error(f"Invalid long_min_ms: {long_min_ms} (must be 200-3000)")
+            return False
+        
+        if not (500 <= long_max_ms <= 5000):
+            logger.error(f"Invalid long_max_ms: {long_max_ms} (must be 500-5000)")
+            return False
+        
+        if not (200 <= symbol_gap_max_ms <= 2000):
+            logger.error(f"Invalid symbol_gap_max_ms: {symbol_gap_max_ms} (must be 200-2000)")
+            return False
+        
+        if not (500 <= word_gap_min_ms <= 5000):
+            logger.error(f"Invalid word_gap_min_ms: {word_gap_min_ms} (must be 500-5000)")
+            return False
+        
+        # Logical validation
+        if short_max_ms >= long_min_ms:
+            logger.error(f"short_max_ms ({short_max_ms}) must be less than long_min_ms ({long_min_ms})")
+            return False
+        
+        if long_min_ms >= long_max_ms:
+            logger.error(f"long_min_ms ({long_min_ms}) must be less than long_max_ms ({long_max_ms})")
+            return False
+        
+        if symbol_gap_max_ms >= word_gap_min_ms:
+            logger.error(f"symbol_gap_max_ms ({symbol_gap_max_ms}) must be less than word_gap_min_ms ({word_gap_min_ms})")
+            return False
+        
+        return True
+    
+    def _get_custom_thresholds(self) -> Dict[str, int]:
+        """
+        Get threshold values for custom profile.
+        
+        Returns:
+            Dictionary of custom threshold values
+        """
+        if self._custom_profile is None:
+            raise ValueError("No custom profile set")
+        
+        return {
+            "short_max_ms": self._custom_profile.short_max_ms,
+            "long_min_ms": self._custom_profile.long_min_ms,
+            "long_max_ms": self._custom_profile.long_max_ms,
+            "symbol_gap_max_ms": self._custom_profile.symbol_gap_max_ms,
+            "word_gap_min_ms": self._custom_profile.word_gap_min_ms
+        }
+    
+    def get_custom_profile(self) -> Optional[CalibrationProfile]:
+        """
+        Get the current custom profile.
+        
+        Returns:
+            Custom profile if set, None otherwise
+        """
+        with self._lock:
+            return self._custom_profile
+    
+    def clear_custom_profile(self) -> None:
+        """
+        Clear the custom profile.
+        """
+        with self._lock:
+            self._custom_profile = None
+            if self._active_profile == "custom":
+                # Switch back to medium if custom was active
+                self.set_profile("medium")
+            logger.info("Custom calibration profile cleared")
+
     def get_stats(self) -> Dict[str, Any]:
         """
         Get calibration manager statistics.
@@ -201,10 +353,15 @@ class CalibrationManager:
             Dictionary with calibration statistics
         """
         with self._lock:
+            available_profiles = list(self.CALIBRATION_PROFILES.keys())
+            if self._custom_profile is not None:
+                available_profiles.append("custom")
+            
             return {
                 "active_profile": self._active_profile,
-                "available_profiles": list(self.CALIBRATION_PROFILES.keys()),
-                "current_thresholds": self._current_thresholds.copy()
+                "available_profiles": available_profiles,
+                "current_thresholds": self._current_thresholds.copy(),
+                "has_custom_profile": self._custom_profile is not None
             }
 
 # Global calibration manager instance
