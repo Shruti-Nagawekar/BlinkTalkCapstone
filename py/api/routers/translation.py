@@ -7,6 +7,7 @@ from typing import Dict, Any
 
 from core.sequence_engine import SequenceEngine
 from core.blink_classifier import BlinkClassifier, BlinkType, GapType
+from core.translation_statistics import get_translation_statistics
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -50,6 +51,10 @@ async def get_translation() -> Dict[str, str]:
             word = engine.get_last_word()
             logger.info(f"Returning completed translation: '{word}'")
             
+            # Record successful translation
+            stats = get_translation_statistics()
+            stats.record_translation(word)
+            
             # Clear the sequence after returning the result
             engine.clear_sequence()
             
@@ -60,6 +65,11 @@ async def get_translation() -> Dict[str, str]:
             
     except Exception as e:
         logger.error(f"Error getting translation: {str(e)}")
+        
+        # Record failed translation
+        stats = get_translation_statistics()
+        stats.record_failure(str(e))
+        
         raise HTTPException(
             status_code=500,
             detail="Internal server error getting translation"
@@ -161,4 +171,27 @@ async def reset_sequence() -> Dict[str, str]:
         raise HTTPException(
             status_code=500,
             detail="Internal server error resetting sequence"
+        )
+
+@router.get("/translation/stats")
+async def get_translation_stats() -> Dict[str, Any]:
+    """
+    Get translation statistics.
+    
+    Returns comprehensive statistics including:
+    - Total translations
+    - Success/failure rates
+    - Average processing time
+    - Word frequency
+    - Recent errors
+    """
+    try:
+        stats = get_translation_statistics()
+        return stats.get_stats()
+        
+    except Exception as e:
+        logger.error(f"Error getting translation stats: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error getting statistics"
         )
