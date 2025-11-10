@@ -19,8 +19,8 @@ struct ContentView: View {
                 .onAppear {
                     previewSize = geometry.size
                 }
-                .onChange(of: geometry.size) { newSize in
-                    previewSize = newSize
+                .onChange(of: geometry.size) { oldValue, newValue in
+                    previewSize = newValue
                 }
 
                 // Object detection overlay

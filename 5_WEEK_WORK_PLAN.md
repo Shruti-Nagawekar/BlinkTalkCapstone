@@ -27,12 +27,8 @@ This document outlines the work plan for the next 5 weeks, dividing tasks betwee
 - IntroView, HomeView, ContentView implemented
 
 #### ❌ **Missing Critical Components:**
-- No networking layer (APIClient, Services)
-- No API models matching Python backend
-- No calibration API integration
-- No frame streaming to backend
-- No translation polling system
-- No result display view
+- No CalibrationView for profile selection
+- No integration between profiles and calibration settings
 
 ---
 
@@ -41,15 +37,11 @@ This document outlines the work plan for the next 5 weeks, dividing tasks betwee
 Based on the current project status, here's what needs to be done **right now**:
 
 ### **Critical Missing Components:**
-1. **Networking Layer** - Create `sw/Services/APIClient.swift` and related files
-2. **API Models** - Create Swift structs matching Python API endpoints
-3. **Calibration Integration** - Connect Swift app to Python calibration API
-4. **Frame Streaming** - Send camera frames to Python backend
-5. **Translation Polling** - Implement translation result polling
-6. **Result Display** - Create view to show translation results
+1. **CalibrationView** - Create view for profile selection (slow/medium)
+2. **Profile-Calibration Integration** - Connect user profiles with calibration settings
 
 ### **Recommended Starting Point:**
-Start with **Week 1 tasks** - focus on creating the networking layer and API integration, as this is the foundation for everything else.
+Complete the **CalibrationView** implementation to allow users to select calibration profiles (slow/medium), then integrate this with the existing profile management system.
 
 ---
 
@@ -63,95 +55,34 @@ Start with **Week 1 tasks** - focus on creating the networking layer and API int
 ### **User Experience Requirements:**
 - **No Camera View**: Remove live camera preview to avoid disorientation
 - **Black Screen Interface**: Display sequence on black background
-- **Calibration Test Flow**: Interactive calibration with visual feedback
-- **Profile Management**: Save user profiles with custom settings
+- **Profile Management**: Save user profiles with calibration settings
+- **Simple Calibration**: Direct profile selection (slow/medium)
 
 ---
 
-## 🧪 **DETAILED CALIBRATION TEST FLOW**
-
-### **Interactive Calibration Process:**
-
-1. **Test Initiation**
-   - White screen flash (2 seconds) to indicate test start
-   - Clear instruction: "Calibration Test Starting"
-   - Countdown: "3... 2... 1... Begin"
-
-2. **Slow Blink Test**
-   - Instruction: "Blink slowly when you see the cue"
-   - Visual cue: Brief white flash
-   - Record blink duration and intensity
-   - Repeat 3 times for accuracy
-   - Calculate average slow blink values
-
-3. **Fast Blink Test**
-   - Instruction: "Blink quickly when you see the cue"
-   - Visual cue: Brief white flash
-   - Record blink duration and intensity
-   - Repeat 3 times for accuracy
-   - Calculate average fast blink values
-
-4. **Results Display & Recommendation**
-   - Show measured values to user
-   - Display recommendation: "Based on your results, we recommend [Slow/Medium] profile"
-   - Show reasoning: "Your slow blinks average Xms, fast blinks average Yms"
-
-5. **User Choice**
-   - **Accept Recommendation**: Proceed with recommended profile
-   - **Choose Custom**: Show custom input fields with measured values as reference
-
-6. **Custom Input (if chosen)**
-   - Display measured values as reference
-   - Input fields for custom thresholds
-   - Validation for reasonable ranges
-   - Preview of custom settings
-
-7. **Profile Saving**
-   - Name input field
-   - Save profile with all settings
-   - Confirmation: "Profile saved successfully"
-
-8. **Profile Selection**
-   - List of saved profiles
-   - One-click selection for future use
-   - Quick setup for returning users
-
----
-
-## Week 1: Foundation & Custom Calibration
+## Week 1: Foundation & Calibration
 
 ### 🐍 **Python Developer Tasks**
-**Goal**: Add custom calibration support to existing backend
+**Goal**: Ensure calibration API is ready for Swift integration
 
 #### Tasks:
-1. **Extend CalibrationManager** (`py/core/calibration.py`)
-   - Add support for "custom" profile type
-   - Add method to set custom thresholds dynamically
-   - Add validation for custom threshold ranges
-   - Update `get_calibration_manager()` to handle custom profiles
+1. **Verify Calibration API** (`py/api/routers/calibration.py`)
+   - Ensure `POST /api/calibration/set` endpoint works correctly
+   - Verify profile switching (slow/medium) functions properly
+   - Test all existing calibration endpoints
 
-2. **Add Custom Calibration API** (`py/api/routers/calibration.py`)
-   - Add `POST /api/calibration/custom` endpoint
-   - Create `CustomCalibrationRequest` model
-   - Add validation for threshold values (reasonable ranges)
-   - Update existing endpoints to handle custom profile
-
-3. **Update Tests** (`py/tests/`)
-   - Add tests for custom calibration functionality
-   - Test threshold validation
-   - Test custom profile switching
-   - Update existing calibration tests
+2. **Update Documentation**
+   - Document calibration API endpoints
+   - Ensure API contracts are clear for Swift integration
 
 #### Deliverables:
-- Custom calibration API working
-- All tests passing
-- Documentation for new endpoints
+- Calibration API verified and working
+- API documentation updated
 
 #### Acceptance Criteria:
-- `POST /api/calibration/custom` accepts custom threshold values
-- Custom profile can be set and retrieved
-- Threshold validation prevents invalid values
-- All existing functionality still works
+- `POST /api/calibration/set` accepts profile names (slow/medium)
+- Profile switching works correctly
+- All existing functionality works
 
 ### 🍎 **Swift Developer Tasks**
 **Goal**: Create networking layer and API integration
@@ -182,36 +113,29 @@ Start with **Week 1 tasks** - focus on creating the networking layer and API int
    - Add JSON encoding/decoding
    - Handle error responses
 
-3. **Create Interactive CalibrationView**
-   - **Calibration Test Flow**:
-     - White screen flash to indicate test start
-     - "Blink slowly" instruction with visual cue
-     - Record slow blink values
-     - "Blink quickly" instruction with visual cue  
-     - Record fast blink values
-     - Display measured values to user
-     - Recommend slow/medium profile based on results
-     - Allow user to accept recommendation or choose custom
-   - **Custom Input Flow**:
-     - If user denies recommendation, show custom input fields
-     - Display their measured values as reference
-     - Allow manual threshold input with validation
+3. **Create CalibrationView**
+   - **Profile Selection**:
+     - Allow user to select between "slow" and "medium" profiles
+     - Display current active profile
+     - Set profile via API
    - **Profile Management**:
-     - Name input field for saving profile
-     - Save profile with all settings
-     - Profile selection for future use
+     - Integrate calibration settings with user profiles
+     - Save profile with calibration settings
+     - Load calibration settings when selecting a profile
 
 #### Deliverables:
 - Complete networking layer
 - API models and endpoints
-- CalibrationView with backend integration
+- CalibrationView with profile selection (slow/medium)
 - Error handling and loading states
+- Profile-calibration integration
 
 #### Acceptance Criteria:
 - Can make API calls to Python backend
-- CalibrationView successfully sets profiles
+- CalibrationView successfully sets profiles (slow/medium)
 - Error handling works properly
 - Loading states show during API calls
+- Profiles can be saved and loaded with calibration settings
 
 ---
 
@@ -460,7 +384,7 @@ Start with **Week 1 tasks** - focus on creating the networking layer and API int
 ## Integration Points
 
 ### API Contracts
-- **Calibration**: `POST /api/calibration/set`, `POST /api/calibration/custom`
+- **Calibration**: `POST /api/calibration/set`
 - **Frames**: `POST /api/frame`
 - **Translation**: `GET /api/translation`
 - **Vocabulary**: `GET /api/vocabulary`
@@ -493,7 +417,6 @@ Start with **Week 1 tasks** - focus on creating the networking layer and API int
 ### User Experience Metrics
 - Successful calibration rate: > 90%
 - Translation accuracy: > 80%
-- User satisfaction with custom calibration
 - Smooth navigation flow
 
 ### Integration Metrics
@@ -510,7 +433,6 @@ Start with **Week 1 tasks** - focus on creating the networking layer and API int
 - **Camera performance**: Test on multiple devices
 - **Network latency**: Implement proper timeouts
 - **Translation accuracy**: Extensive testing with real users
-- **Custom calibration**: Thorough validation and testing
 
 ### Timeline Risks
 - **Swift development**: Start with basic UI, iterate

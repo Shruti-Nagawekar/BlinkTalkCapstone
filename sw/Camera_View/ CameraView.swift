@@ -119,7 +119,7 @@ class CameraCoordinator: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate 
     private func processFrameForObjectDetection(imageBuffer: CVPixelBuffer) {
         let request = VNDetectRectanglesRequest { [weak self] (request: VNRequest, error: Error?) in
             guard let self = self,
-                  let results = request.results as? [VNObservation] else { return }
+                  let results = request.results else { return }
             
             let detectedObjects = results.compactMap { observation -> DetectedObject? in
                 guard let objectObservation = observation as? VNDetectedObjectObservation else { return nil }

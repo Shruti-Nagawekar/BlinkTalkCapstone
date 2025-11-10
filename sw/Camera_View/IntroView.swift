@@ -4,18 +4,33 @@ struct IntroView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                LinearGradient(colors: [.black, .blue.opacity(0.7)], startPoint: .top, endPoint: .bottom)
+                // Black background
+                Color.black
                     .ignoresSafeArea()
+                
                 VStack(spacing: 24) {
                     Text("Welcome to BlinkTalk")
-                        .font(.largeTitle).bold()
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
                         .foregroundColor(.white)
                         .multilineTextAlignment(.center)
-                    Text("Private, fast, camera-powered experiences.")
+                    
+                    Text("Blink. Express. Connect. Communicate.")
+                        .font(.body)
                         .foregroundColor(.white.opacity(0.8))
                         .multilineTextAlignment(.center)
-                    NavigationLink("Continue", destination: HomeView())
-                        .buttonStyle(.borderedProminent)
+                    
+                    NavigationLink(destination: HomeView()) {
+                        Text("Continue")
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.white)
+                            .cornerRadius(12)
+                    }
+                    .padding(.top, 20)
                 }
                 .padding(32)
             }

@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AVFoundation
+import Combine
 
 struct BlinkDetectionView: View {
     @State private var currentSequence: [String] = []
@@ -20,6 +21,8 @@ struct BlinkDetectionView: View {
     @State private var resultWord: String = ""
     @State private var pollCount: Int = 0
     @State private var isPolling: Bool = false
+    @State private var lastFrameSentTime: Date = Date.distantPast
+    @State private var isBackendReset: Bool = false  // Track if backend is reset but UI persists
     
     @StateObject private var cameraManager = BackgroundCameraManager()
     @StateObject private var frameProcessor = FrameProcessor()
@@ -27,6 +30,7 @@ struct BlinkDetectionView: View {
     private let translationEndpoint = TranslationEndpoint()
     private let pollingTimeout: Int = 10  // 10 seconds
     private let pollingInterval: Double = 2.0  // 2 seconds
+    private let frameSendInterval: TimeInterval = 0.2  // Send frame every 200ms (5 FPS)
     
     var body: some View {
         ZStack {
@@ -75,9 +79,9 @@ struct BlinkDetectionView: View {
                 if !currentSequence.isEmpty {
                     Text(currentSequence.joined(separator: " "))
                         .font(.system(size: 48, weight: .bold))
-                        .foregroundColor(.green)
+                        .foregroundColor(.white)
                         .padding()
-                        .background(Color.green.opacity(0.1))
+                        .background(Color.white.opacity(0.1))
                         .cornerRadius(10)
                         .padding()
                 }
@@ -86,14 +90,52 @@ struct BlinkDetectionView: View {
                 if !lastWord.isEmpty {
                     Text(lastWord)
                         .font(.system(size: 56, weight: .bold))
-                        .foregroundColor(.yellow)
+                        .foregroundColor(.white)
                         .padding()
-                        .background(Color.yellow.opacity(0.1))
+                        .background(Color.white.opacity(0.1))
                         .cornerRadius(10)
                         .padding()
                 }
                 
                 Spacer()
+                
+                // Reset Button - appears when there's content and backend isn't reset yet
+                if (!currentSequence.isEmpty || !lastWord.isEmpty) && !isBackendReset {
+                    Button(action: {
+                        resetSequence()
+                    }) {
+                        HStack {
+                            Image(systemName: "arrow.counterclockwise")
+                            Text("Reset Sequence")
+                        }
+                        .font(.headline)
+                        .foregroundColor(.black)
+                        .padding()
+                        .background(Color.white)
+                        .cornerRadius(12)
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom, 10)
+                }
+                
+                // Ready for Next Sequence Button - appears after reset
+                if isBackendReset {
+                    Button(action: {
+                        readyForNextSequence()
+                    }) {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                            Text("Ready for Next Sequence")
+                        }
+                        .font(.headline)
+                        .foregroundColor(.black)
+                        .padding()
+                        .background(Color.white)
+                        .cornerRadius(12)
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom, 10)
+                }
                 
                 // Status Information
                 VStack(spacing: 8) {
@@ -113,18 +155,18 @@ struct BlinkDetectionView: View {
                     if !blinkClass.isEmpty {
                         Text("Blink: \(blinkClass)")
                             .font(.caption)
-                            .foregroundColor(.green)
+                            .foregroundColor(.white.opacity(0.8))
                     }
                     
                     if earValue > 0 {
                         Text("EAR: \(String(format: "%.3f", earValue))")
                             .font(.caption)
-                            .foregroundColor(.cyan)
+                            .foregroundColor(.white.opacity(0.6))
                     }
                     
                     Text("Sequence: \(currentSequence.count) symbols")
                         .font(.caption)
-                        .foregroundColor(.gray)
+                        .foregroundColor(.white.opacity(0.6))
                 }
                 .padding(.bottom, 40)
                 }
@@ -132,9 +174,18 @@ struct BlinkDetectionView: View {
         }
         .onAppear {
             checkCameraPermission()
+            cameraManager.onFrameCaptured = { frame in
+                Task {
+                    await processFrame(frame)
+                }
+            }
         }
-        .onChange(of: cameraManager.frameStatus) { status in
-            handleFrameStatus(status)
+        .onDisappear {
+            // Stop camera when view disappears to prevent multiple input errors
+            cameraManager.stopCapture()
+        }
+        .onChange(of: cameraManager.frameStatus) { oldValue, newValue in
+            handleFrameStatus(newValue)
         }
         .fullScreenCover(isPresented: $showResultView) {
             ResultView(translatedWord: resultWord) {
@@ -150,13 +201,19 @@ struct BlinkDetectionView: View {
         cameraPermissionStatus = AVCaptureDevice.authorizationStatus(for: .video)
         
         if cameraPermissionStatus == .authorized {
-            cameraManager.startCapture()
+            // Start camera on background thread
+            DispatchQueue.global(qos: .userInitiated).async {
+                self.cameraManager.startCapture()
+            }
         } else if cameraPermissionStatus == .notDetermined {
             AVCaptureDevice.requestAccess(for: .video) { granted in
                 DispatchQueue.main.async {
                     if granted {
                         self.cameraPermissionStatus = .authorized
-                        self.cameraManager.startCapture()
+                        // Start camera on background thread
+                        DispatchQueue.global(qos: .userInitiated).async {
+                            self.cameraManager.startCapture()
+                        }
                     } else {
                         self.cameraPermissionStatus = .denied
                         self.errorMessage = "Camera permission denied"
@@ -170,13 +227,12 @@ struct BlinkDetectionView: View {
     
     private func handleFrameStatus(_ status: CameraFrameStatus) {
         switch status {
-        case .processing(let frame):
-            Task {
-                await processFrame(frame)
-            }
-        case .error(let error):
+        case .processing:
+            // Frame processing will be handled by the camera delegate
+            break
+        case .error(let errorString):
             DispatchQueue.main.async {
-                errorMessage = error.localizedDescription
+                errorMessage = errorString
                 isProcessing = false
             }
         case .ready:
@@ -185,6 +241,21 @@ struct BlinkDetectionView: View {
     }
     
     private func processFrame(_ frame: CMSampleBuffer) async {
+        // Don't process frames if backend is reset (waiting for user to be ready)
+        guard !isBackendReset else {
+            return // Skip processing until user is ready for next sequence
+        }
+        
+        // Throttle frame sending - only send every 200ms (5 FPS)
+        let now = Date()
+        let timeSinceLastFrame = now.timeIntervalSince(lastFrameSentTime)
+        guard timeSinceLastFrame >= frameSendInterval else {
+            return // Skip this frame
+        }
+        
+        lastFrameSentTime = now
+        
+        guard !isProcessing else { return } // Don't process if already processing
         isProcessing = true
         
         do {
@@ -287,58 +358,162 @@ struct BlinkDetectionView: View {
         guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return nil }
         return UIImage(cgImage: cgImage)
     }
+    
+    private func resetSequence() {
+        Task {
+            do {
+                _ = try await translationEndpoint.resetSequence()
+                await MainActor.run {
+                    // Reset backend but keep UI visible
+                    isBackendReset = true
+                    print("✅ Backend sequence reset, UI persists")
+                }
+            } catch {
+                await MainActor.run {
+                    print("⚠️ Failed to reset sequence: \(error.localizedDescription)")
+                    // Still mark as reset even if backend fails
+                    isBackendReset = true
+                }
+            }
+        }
+    }
+    
+    private func readyForNextSequence() {
+        // Clear UI and allow new sequence
+        currentSequence = []
+        lastWord = ""
+        isBackendReset = false
+        print("✅ Ready for next sequence")
+    }
 }
 
 // MARK: - Camera Frame Status
 enum CameraFrameStatus: Equatable {
     case ready
-    case processing(CMSampleBuffer)
-    case error(Error)
+    case processing
+    case error(String)
+    
+    static func == (lhs: CameraFrameStatus, rhs: CameraFrameStatus) -> Bool {
+        switch (lhs, rhs) {
+        case (.ready, .ready), (.processing, .processing):
+            return true
+        case (.error(let lhsError), .error(let rhsError)):
+            return lhsError == rhsError
+        default:
+            return false
+        }
+    }
 }
 
 // MARK: - Background Camera Manager
-class BackgroundCameraManager: ObservableObject {
+class BackgroundCameraManager: NSObject, ObservableObject {
     @Published var frameStatus: CameraFrameStatus = .ready
+    
+    var onFrameCaptured: ((CMSampleBuffer) -> Void)?
     
     private let session = AVCaptureSession()
     private let output = AVCaptureVideoDataOutput()
     private var isRunning = false
+    private let sessionQueue = DispatchQueue(label: "CameraSessionQueue")
     
     func startCapture() {
-        guard !isRunning else { return }
-        
-        session.beginConfiguration()
-        session.sessionPreset = .high
-        
-        // Setup camera
-        guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front),
-              let input = try? AVCaptureDeviceInput(device: camera),
-              session.canAddInput(input) else {
-            DispatchQueue.main.async {
-                self.frameStatus = .error(NSError(domain: "CameraManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unable to access camera"]))
+        sessionQueue.async {
+            // Always stop and clean up first to prevent multiple inputs
+            if self.session.isRunning {
+                self.session.stopRunning()
+                // Wait a moment for session to fully stop
+                Thread.sleep(forTimeInterval: 0.1)
             }
-            return
+            
+            self.session.beginConfiguration()
+            self.session.sessionPreset = .high
+            
+            // Remove existing inputs first (critical to prevent multiple input error)
+            let existingInputs = self.session.inputs
+            for input in existingInputs {
+                self.session.removeInput(input)
+            }
+            
+            // Remove existing outputs first
+            let existingOutputs = self.session.outputs
+            for output in existingOutputs {
+                self.session.removeOutput(output)
+            }
+            
+            // Setup camera
+            guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front),
+                  let input = try? AVCaptureDeviceInput(device: camera) else {
+                self.session.commitConfiguration()
+                DispatchQueue.main.async {
+                    self.frameStatus = .error("Unable to access camera")
+                }
+                self.isRunning = false
+                return
+            }
+            
+            // Only add input if session can accept it
+            guard self.session.canAddInput(input) else {
+                self.session.commitConfiguration()
+                DispatchQueue.main.async {
+                    self.frameStatus = .error("Cannot add camera input")
+                }
+                self.isRunning = false
+                return
+            }
+            
+            self.session.addInput(input)
+            
+            // Setup output
+            self.output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
+            self.output.setSampleBufferDelegate(self, queue: DispatchQueue(label: "CameraQueue"))
+            
+            guard self.session.canAddOutput(self.output) else {
+                self.session.removeInput(input) // Clean up input if output fails
+                self.session.commitConfiguration()
+                DispatchQueue.main.async {
+                    self.frameStatus = .error("Cannot add camera output")
+                }
+                self.isRunning = false
+                return
+            }
+            
+            self.session.addOutput(self.output)
+            self.session.commitConfiguration()
+            
+            // Start running after configuration is committed
+            self.session.startRunning()
+            self.isRunning = true
+            
+            DispatchQueue.main.async {
+                print("✅ Background camera started")
+            }
         }
-        
-        session.addInput(input)
-        
-        // Setup output
-        output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
-        output.setSampleBufferDelegate(self, queue: DispatchQueue(label: "CameraQueue"))
-        
-        guard session.canAddOutput(output) else { return }
-        session.addOutput(output)
-        
-        session.commitConfiguration()
-        session.startRunning()
-        isRunning = true
-        
-        print("✅ Background camera started")
     }
     
     func stopCapture() {
-        session.stopRunning()
-        isRunning = false
+        sessionQueue.async {
+            guard self.isRunning else { return }
+            
+            self.session.beginConfiguration()
+            
+            // Remove all inputs
+            for input in self.session.inputs {
+                self.session.removeInput(input)
+            }
+            
+            // Remove all outputs
+            for output in self.session.outputs {
+                self.session.removeOutput(output)
+            }
+            
+            self.session.commitConfiguration()
+            self.session.stopRunning()
+            self.isRunning = false
+            
+            DispatchQueue.main.async {
+                print("✅ Background camera stopped")
+            }
+        }
     }
     
     deinit {
@@ -349,8 +524,9 @@ class BackgroundCameraManager: ObservableObject {
 extension BackgroundCameraManager: AVCaptureVideoDataOutputSampleBufferDelegate {
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         DispatchQueue.main.async {
-            self.frameStatus = .processing(sampleBuffer)
+            self.frameStatus = .processing
         }
+        onFrameCaptured?(sampleBuffer)
     }
     
     func captureOutput(_ output: AVCaptureOutput, didDrop sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {

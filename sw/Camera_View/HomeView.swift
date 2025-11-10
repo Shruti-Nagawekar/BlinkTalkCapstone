@@ -7,70 +7,132 @@ struct HomeView: View {
     private var profiles: FetchedResults<UserProfile>
 
     @State private var newName: String = ""
-    @State private var serverURLString: String = UserDefaults.standard.string(forKey: "serverURL") ?? "http://192.168.1.10:5000"
-    @State private var showCamera: Bool = false
-    @State private var apiStatus: String = "Not tested"
-    @State private var isTestingAPI: Bool = false
-    
-    // API Endpoints
-    private let calibrationEndpoint = CalibrationEndpoint()
-    private let healthEndpoint = HealthEndpoint()
+    @State private var showCalibration: Bool = false
+    @State private var showBlinkDetection: Bool = false
+    @State private var selectedProfile: UserProfile? = nil
 
     var body: some View {
-        List {
-            Section(header: Text("Server")) {
-                TextField("Server base URL", text: $serverURLString)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                Button("Save Server URL") {
-                    UserDefaults.standard.set(serverURLString, forKey: "serverURL")
-                }
-                
-                HStack {
-                    Text("Status: \(apiStatus)")
-                        .foregroundColor(apiStatus.contains("OK") ? .green : 
-                                        apiStatus.contains("Error") ? .red : .secondary)
-                    Spacer()
-                }
-                .padding(.vertical, 4)
-                
-                Button("Test API Connection") {
-                    testAPIConnection()
-                }
-                .disabled(isTestingAPI)
-            }
-
-            Section(header: Text("Create Profile")) {
-                HStack {
-                    TextField("Name", text: $newName)
-                    Button("Add") { addProfile() }
-                        .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            }
-
-            Section(header: Text("Profiles")) {
-                ForEach(profiles) { profile in
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(profile.name ?? "Unnamed")
-                                .font(.headline)
-                            if let createdAt = profile.createdAt {
-                                Text(createdAt, style: .date)
-                                    .foregroundColor(.secondary)
+        ZStack {
+            // Black background
+            Color.black
+                .ignoresSafeArea()
+            
+            ScrollView {
+                VStack(spacing: 30) {
+                    // Title
+                    Text("BlinkTalk")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .padding(.top, 20)
+                    
+                    // Create Profile Section
+                    VStack(alignment: .leading, spacing: 15) {
+                        Text("Create Profile")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                        
+                        HStack {
+                            TextField("Name", text: $newName)
+                                .padding()
+                                .background(Color.white.opacity(0.1))
+                                .foregroundColor(.white)
+                                .cornerRadius(10)
+                            
+                            Button("Add") {
+                                addProfile()
                             }
-                        }
-                        Spacer()
-                        Button("Use") {
-                            showCamera = true
+                            .padding()
+                            .background(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.white.opacity(0.3) : Color.white)
+                            .foregroundColor(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .white.opacity(0.5) : .black)
+                            .cornerRadius(10)
+                            .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         }
                     }
+                    .padding()
+                    .background(Color.white.opacity(0.05))
+                    .cornerRadius(15)
+                    
+                    // Profiles Section
+                    VStack(alignment: .leading, spacing: 15) {
+                        Text("Profiles")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                        
+                        if profiles.isEmpty {
+                            Text("No profiles yet. Create one above.")
+                                .foregroundColor(.white.opacity(0.6))
+                                .padding()
+                        } else {
+                            ForEach(profiles) { profile in
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(profile.name ?? "Unnamed")
+                                            .font(.headline)
+                                            .foregroundColor(.white)
+                                        if let createdAt = profile.createdAt {
+                                            Text(createdAt, style: .date)
+                                                .font(.caption)
+                                                .foregroundColor(.white.opacity(0.6))
+                                        }
+                                    }
+                                    Spacer()
+                                    if let calibrationProfile = profile.calibrationProfile, !calibrationProfile.isEmpty {
+                                        Text(calibrationProfile.capitalized)
+                                            .font(.caption)
+                                            .foregroundColor(.black)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(Color.white)
+                                            .cornerRadius(6)
+                                    }
+                                    
+                                    Button("Use") {
+                                        selectedProfile = profile
+                                        DispatchQueue.main.async {
+                                            showCalibration = true
+                                        }
+                                    }
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 10)
+                                    .background(Color.white)
+                                    .foregroundColor(.black)
+                                    .cornerRadius(10)
+                                }
+                                .padding()
+                                .background(Color.white.opacity(0.05))
+                                .cornerRadius(10)
+                            }
+                        }
+                    }
+                    .padding()
+                    .background(Color.white.opacity(0.05))
+                    .cornerRadius(15)
                 }
-                .onDelete(perform: deleteProfiles)
+                .padding()
             }
         }
-        .navigationTitle("Home")
-        .toolbar { EditButton() }
-        .sheet(isPresented: $showCamera) {
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showCalibration) {
+            NavigationStack {
+                if let profile = selectedProfile {
+                    CalibrationView(profile: profile, onContinue: {
+                        print("onContinue callback called")
+                        showCalibration = false
+                        // Small delay to ensure sheet dismisses before showing new view
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            print("Showing BlinkDetectionView")
+                            showBlinkDetection = true
+                        }
+                    })
+                } else {
+                    Text("Error: No profile selected")
+                        .foregroundColor(.white)
+                }
+            }
+        }
+        .fullScreenCover(isPresented: $showBlinkDetection) {
             BlinkDetectionView()
         }
     }
@@ -80,35 +142,31 @@ struct HomeView: View {
         profile.id = UUID()
         profile.name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         profile.createdAt = Date()
-        do { try viewContext.save(); newName = "" } catch { print("Save error: \(error)") }
+        do { 
+            try viewContext.save()
+            // Automatically show calibration view for the new profile
+            selectedProfile = profile
+            newName = ""
+            DispatchQueue.main.async {
+                showCalibration = true
+            }
+        } catch { 
+            print("Save error: \(error)") 
+        }
     }
 
+    private func deleteProfile(_ profile: UserProfile) {
+        viewContext.delete(profile)
+        do { 
+            try viewContext.save() 
+        } catch { 
+            print("Delete error: \(error)") 
+        }
+    }
+    
     private func deleteProfiles(offsets: IndexSet) {
         offsets.map { profiles[$0] }.forEach(viewContext.delete)
         do { try viewContext.save() } catch { print("Delete error: \(error)") }
-    }
-    
-    private func testAPIConnection() {
-        isTestingAPI = true
-        apiStatus = "Testing..."
-        
-        Task {
-            do {
-                // Test health endpoint
-                let health = try await healthEndpoint.checkHealth()
-                apiStatus = "OK - Connected: \(health.status)"
-                
-                // Test calibration endpoint
-                let calibration = try await calibrationEndpoint.getActiveProfile()
-                apiStatus += "\nProfile: \(calibration.profile)"
-            } catch let error as APIError {
-                apiStatus = "Error: \(error.localizedDescription)"
-            } catch {
-                apiStatus = "Error: \(error.localizedDescription)"
-            }
-            
-            isTestingAPI = false
-        }
     }
 }
 

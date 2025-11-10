@@ -13,20 +13,34 @@ class APIClient {
     // MARK: - Singleton
     static let shared = APIClient()
     
-    private init() {}
-    
     // MARK: - Properties
     private let session: URLSession
     
     var baseURL: String {
         get {
-            UserDefaults.standard.string(forKey: "serverURL") ?? "http://192.168.1.10:5000"
+            // Check if old URL is stored and update it
+            if let storedURL = UserDefaults.standard.string(forKey: "serverURL"),
+               storedURL.contains("192.168.1.10") {
+                // Update to new IP
+                let newURL = storedURL.replacingOccurrences(of: "192.168.1.10", with: "100.70.127.109")
+                UserDefaults.standard.set(newURL, forKey: "serverURL")
+                return newURL
+            }
+            return UserDefaults.standard.string(forKey: "serverURL") ?? "http://100.70.127.109:5000"
         }
     }
     
-    // Initialize with default session
-    init(session: URLSession = .shared) {
-        self.session = session
+    // Initialize with default session that has timeout configuration
+    init(session: URLSession? = nil) {
+        if let session = session {
+            self.session = session
+        } else {
+            // Create session with timeout configuration
+            let configuration = URLSessionConfiguration.default
+            configuration.timeoutIntervalForRequest = 10.0 // 10 second timeout
+            configuration.timeoutIntervalForResource = 30.0 // 30 second total timeout
+            self.session = URLSession(configuration: configuration)
+        }
     }
     
     // MARK: - Generic Request Method
