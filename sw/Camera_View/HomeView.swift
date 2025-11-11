@@ -7,7 +7,6 @@ struct HomeView: View {
     private var profiles: FetchedResults<UserProfile>
 
     @State private var newName: String = ""
-    @State private var showCalibration: Bool = false
     @State private var showBlinkDetection: Bool = false
     @State private var selectedProfile: UserProfile? = nil
 
@@ -88,10 +87,8 @@ struct HomeView: View {
                                     }
                                     
                                     Button("Use") {
+                                        // Set profile to show sheet
                                         selectedProfile = profile
-                                        DispatchQueue.main.async {
-                                            showCalibration = true
-                                        }
                                     }
                                     .padding(.horizontal, 20)
                                     .padding(.vertical, 10)
@@ -114,22 +111,17 @@ struct HomeView: View {
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showCalibration) {
+        .sheet(item: $selectedProfile) { profile in
             NavigationStack {
-                if let profile = selectedProfile {
-                    CalibrationView(profile: profile, onContinue: {
-                        print("onContinue callback called")
-                        showCalibration = false
-                        // Small delay to ensure sheet dismisses before showing new view
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            print("Showing BlinkDetectionView")
-                            showBlinkDetection = true
-                        }
-                    })
-                } else {
-                    Text("Error: No profile selected")
-                        .foregroundColor(.white)
-                }
+                CalibrationView(profile: profile, onContinue: {
+                    print("onContinue callback called")
+                    selectedProfile = nil  // Dismiss sheet
+                    // Small delay to ensure sheet dismisses before showing new view
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        print("Showing BlinkDetectionView")
+                        showBlinkDetection = true
+                    }
+                })
             }
         }
         .fullScreenCover(isPresented: $showBlinkDetection) {
@@ -145,11 +137,8 @@ struct HomeView: View {
         do { 
             try viewContext.save()
             // Automatically show calibration view for the new profile
-            selectedProfile = profile
             newName = ""
-            DispatchQueue.main.async {
-                showCalibration = true
-            }
+            selectedProfile = profile  // This will trigger the sheet
         } catch { 
             print("Save error: \(error)") 
         }

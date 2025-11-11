@@ -20,13 +20,14 @@ class APIClient {
         get {
             // Check if old URL is stored and update it
             if let storedURL = UserDefaults.standard.string(forKey: "serverURL"),
-               storedURL.contains("192.168.1.10") {
+               (storedURL.contains("192.168.1.10") || storedURL.contains("100.70.127.109")) {
                 // Update to new IP
-                let newURL = storedURL.replacingOccurrences(of: "192.168.1.10", with: "100.70.127.109")
+                let newURL = storedURL.replacingOccurrences(of: "192.168.1.10", with: "10.161.134.153")
+                    .replacingOccurrences(of: "100.70.127.109", with: "10.161.134.153")
                 UserDefaults.standard.set(newURL, forKey: "serverURL")
                 return newURL
             }
-            return UserDefaults.standard.string(forKey: "serverURL") ?? "http://100.70.127.109:5000"
+            return UserDefaults.standard.string(forKey: "serverURL") ?? "http://10.161.134.153:5000"
         }
     }
     

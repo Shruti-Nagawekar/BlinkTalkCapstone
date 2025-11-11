@@ -21,9 +21,10 @@ class SequenceEngine:
         self.current_sequence = []
         self.last_word = ""
         self.sequence_complete = False
+        self.max_sequence_length = 4  # Maximum sequence length (longest vocab is 3, 4 allows fuzzy matching)
         
         # Log initialization
-        logger.info(f"SequenceEngine initialized with {len(self.vocab)} vocabulary entries")
+        logger.info(f"SequenceEngine initialized with {len(self.vocab)} vocabulary entries, max_sequence_length={self.max_sequence_length}")
     
     def add_blink(self, blink_type: str) -> None:
         """
@@ -36,8 +37,28 @@ class SequenceEngine:
             logger.warning(f"Invalid blink type: {blink_type}, ignoring")
             return
         
+        # Don't add blinks if sequence is already complete
+        if self.sequence_complete:
+            logger.warning(f"⚠️ Sequence already complete, ignoring blink '{blink_type}'. Last word: '{self.last_word}'")
+            print(f"⚠️ DEBUG: Sequence already complete (word: '{self.last_word}'), ignoring blink '{blink_type}'")
+            return
+        
+        # Check if sequence is already at max length
+        if len(self.current_sequence) >= self.max_sequence_length:
+            logger.warning(f"⚠️ Sequence already at max length ({self.max_sequence_length}), ignoring blink '{blink_type}'. Current: {self.current_sequence}")
+            print(f"⚠️ DEBUG: Sequence at max length, auto-finalizing before adding new blink")
+            self.finalize_sequence()
+            return
+        
         self.current_sequence.append(blink_type)
-        logger.debug(f"Added blink '{blink_type}' to sequence: {self.current_sequence}")
+        logger.info(f"✅ Added blink '{blink_type}' to sequence: {self.current_sequence} (length: {len(self.current_sequence)}/{self.max_sequence_length})")
+        print(f"✅ DEBUG: Added blink '{blink_type}', sequence: {self.current_sequence} (length: {len(self.current_sequence)}/{self.max_sequence_length})")
+        
+        # Auto-finalize if we've reached max length
+        if len(self.current_sequence) >= self.max_sequence_length:
+            logger.info(f"🔄 Sequence reached max length ({self.max_sequence_length}), auto-finalizing...")
+            print(f"🔄 DEBUG: Sequence reached max length ({self.max_sequence_length}), auto-finalizing...")
+            self.finalize_sequence()
     
     def finalize_sequence(self) -> Optional[str]:
         """
@@ -48,11 +69,13 @@ class SequenceEngine:
         """
         if not self.current_sequence:
             logger.debug("No sequence to finalize")
+            print("⚠️ DEBUG: finalize_sequence() called but sequence is empty")
             return None
         
         # Convert sequence to pattern string
         pattern = " ".join(self.current_sequence)
         logger.info(f"Finalizing sequence: {pattern}")
+        print(f"🔍 DEBUG: Finalizing sequence: '{pattern}' (length: {len(self.current_sequence)})")
         
         # Try exact match first
         if pattern in self.vocab:
@@ -60,6 +83,7 @@ class SequenceEngine:
             self.last_word = word
             self.sequence_complete = True
             logger.info(f"Exact match found: '{pattern}' -> '{word}'")
+            print(f"✅ DEBUG: Exact match found: '{pattern}' -> '{word}'")
             return word
         
         # Try fuzzy matching (off-by-one symbol tolerance)
@@ -68,9 +92,11 @@ class SequenceEngine:
             self.last_word = word
             self.sequence_complete = True
             logger.info(f"Fuzzy match found: '{pattern}' -> '{word}'")
+            print(f"✅ DEBUG: Fuzzy match found: '{pattern}' -> '{word}'")
             return word
         
         logger.warning(f"No match found for sequence: {pattern}")
+        print(f"❌ DEBUG: No match found for sequence: '{pattern}'")
         return None
     
     def _fuzzy_match(self, pattern: str) -> Optional[str]:
@@ -165,8 +191,10 @@ class SequenceEngine:
     def clear_sequence(self) -> None:
         """Clear the current sequence and reset state."""
         logger.debug(f"Clearing sequence: {self.current_sequence}")
+        print(f"🧹 DEBUG: Clearing sequence: {self.current_sequence}, was complete: {self.sequence_complete}")
         self.current_sequence = []
         self.sequence_complete = False
+        print(f"✅ DEBUG: Sequence cleared, ready for new blinks")
     
     def get_current_sequence(self) -> List[str]:
         """Get the current sequence as a list of blink types."""

@@ -160,10 +160,12 @@ async def reset_sequence() -> Dict[str, str]:
         engine = get_sequence_engine()
         classifier = get_blink_classifier()
         
+        print(f"🔄 DEBUG: Resetting sequence and classifier state")
         engine.clear_sequence()
         classifier.reset()
         
         logger.info("Sequence and classifier state reset")
+        print(f"✅ DEBUG: Sequence and classifier reset successfully")
         return {"message": "Sequence reset successfully"}
         
     except Exception as e:

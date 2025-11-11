@@ -37,22 +37,27 @@ struct CalibrationView: View {
                     .foregroundColor(.white)
                     .padding(.top, 40)
                 
-                // Current active profile display
-                if !currentActiveProfile.isEmpty {
-                    VStack(spacing: 8) {
-                        Text("Current Profile")
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.6))
-                        Text(currentActiveProfile.capitalized)
+                // Current active profile display - updates in real-time with selection
+                VStack(spacing: 8) {
+                    Text("Current Profile")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.6))
+                    if isLoading && currentActiveProfile.isEmpty {
+                        // Show loading indicator only while fetching from backend
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    } else {
+                        // Show selected profile (updates in real-time) or backend profile if available
+                        Text(selectedProfile.capitalized)
                             .font(.headline)
                             .foregroundColor(.white)
                     }
-                    .padding()
-                    .frame(maxWidth: .infinity)
-                    .background(Color.white.opacity(0.1))
-                    .cornerRadius(10)
-                    .padding(.horizontal)
                 }
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(Color.white.opacity(0.1))
+                .cornerRadius(10)
+                .padding(.horizontal)
                 
                 // Profile selection buttons
                 VStack(spacing: 20) {

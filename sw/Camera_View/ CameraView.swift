@@ -138,7 +138,7 @@ class CameraCoordinator: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate 
     }
 
     func sendFrameToServer(_ data: Data) {
-        let baseURL = UserDefaults.standard.string(forKey: "serverURL") ?? "http://192.168.1.10:5000"
+        let baseURL = UserDefaults.standard.string(forKey: "serverURL") ?? "http://10.161.134.153:5000"
         guard let url = URL(string: baseURL + "/frame") else { return }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"

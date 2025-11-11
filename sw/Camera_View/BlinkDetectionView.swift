@@ -10,6 +10,8 @@ import AVFoundation
 import Combine
 
 struct BlinkDetectionView: View {
+    @Environment(\.dismiss) private var dismiss
+    
     @State private var currentSequence: [String] = []
     @State private var lastWord: String = ""
     @State private var isProcessing: Bool = false
@@ -23,6 +25,8 @@ struct BlinkDetectionView: View {
     @State private var isPolling: Bool = false
     @State private var lastFrameSentTime: Date = Date.distantPast
     @State private var isBackendReset: Bool = false  // Track if backend is reset but UI persists
+    @State private var isResetComplete: Bool = false  // Track if backend reset has completed
+    @State private var firstFrameAfterReset: Bool = true  // Track if this is the first frame after reset
     
     @StateObject private var cameraManager = BackgroundCameraManager()
     @StateObject private var frameProcessor = FrameProcessor()
@@ -39,6 +43,26 @@ struct BlinkDetectionView: View {
                 .ignoresSafeArea()
             
             VStack {
+                // Top bar with back button
+                HStack {
+                    Button(action: {
+                        dismiss()
+                    }) {
+                        HStack {
+                            Image(systemName: "chevron.left")
+                            Text("Back")
+                        }
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.1))
+                        .cornerRadius(10)
+                    }
+                    Spacer()
+                }
+                .padding()
+                
                 // Permission denied view
                 if cameraPermissionStatus == .denied {
                     VStack(spacing: 20) {
@@ -75,27 +99,46 @@ struct BlinkDetectionView: View {
                 } else {
                 Spacer()
                 
-                // Current Sequence Display
-                if !currentSequence.isEmpty {
-                    Text(currentSequence.joined(separator: " "))
-                        .font(.system(size: 48, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding()
-                        .background(Color.white.opacity(0.1))
-                        .cornerRadius(10)
-                        .padding()
+                // Sequence and Word Display - fixed container to prevent layout shifts
+                VStack(spacing: 20) {
+                    // Current Sequence Display - always present to maintain layout
+                    ZStack {
+                        // Background always visible
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.white.opacity(0.1))
+                            .frame(height: 100)
+                        
+                        // Text content - use fixed frame to prevent layout shifts
+                        Text(currentSequence.isEmpty ? "" : currentSequence.joined(separator: " "))
+                            .font(.system(size: 48, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .opacity(currentSequence.isEmpty ? 0 : 1)
+                    }
+                    .frame(height: 100)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal)
+                    
+                    // Last Word Display - always present to maintain layout
+                    ZStack {
+                        // Background always visible
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.white.opacity(0.1))
+                            .frame(height: 100)
+                        
+                        // Text content - use fixed frame to prevent layout shifts
+                        Text(lastWord.isEmpty ? "" : lastWord)
+                            .font(.system(size: 56, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .opacity(lastWord.isEmpty ? 0 : 1)
+                    }
+                    .frame(height: 100)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal)
                 }
-                
-                // Last Word Display
-                if !lastWord.isEmpty {
-                    Text(lastWord)
-                        .font(.system(size: 56, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding()
-                        .background(Color.white.opacity(0.1))
-                        .cornerRadius(10)
-                        .padding()
-                }
+                .frame(height: 240) // Fixed height container - never changes
+                .fixedSize(horizontal: false, vertical: true) // Prevent size changes
                 
                 Spacer()
                 
@@ -173,6 +216,44 @@ struct BlinkDetectionView: View {
             }
         }
         .onAppear {
+            // Clear ALL UI state immediately to prevent showing old persisted sequence
+            currentSequence = []
+            lastWord = ""
+            resultWord = ""
+            isBackendReset = false
+            isResetComplete = false  // Block frame processing until reset is done
+            firstFrameAfterReset = true  // Mark that we're waiting for first frame after reset
+            isPolling = false
+            pollCount = 0
+            errorMessage = nil
+            
+            // Reset backend sequence when view appears to start fresh
+            Task {
+                do {
+                    _ = try await translationEndpoint.resetSequence()
+                    print("✅ Backend sequence reset on view appear")
+                    // Ensure UI is completely cleared and allow frame processing after backend reset
+                    await MainActor.run {
+                        // Force clear everything again after reset
+                        currentSequence = []
+                        lastWord = ""
+                        resultWord = ""
+                        isPolling = false
+                        pollCount = 0
+                        isResetComplete = true  // Now allow frame processing
+                    }
+                } catch {
+                    print("⚠️ Failed to reset sequence on appear: \(error.localizedDescription)")
+                    // Even if reset fails, allow processing (backend might be clean)
+                    await MainActor.run {
+                        // Still clear UI state
+                        currentSequence = []
+                        lastWord = ""
+                        isResetComplete = true
+                    }
+                }
+            }
+            
             checkCameraPermission()
             cameraManager.onFrameCaptured = { frame in
                 Task {
@@ -241,6 +322,11 @@ struct BlinkDetectionView: View {
     }
     
     private func processFrame(_ frame: CMSampleBuffer) async {
+        // Don't process frames until backend reset is complete
+        guard isResetComplete else {
+            return // Skip processing until reset is complete
+        }
+        
         // Don't process frames if backend is reset (waiting for user to be ready)
         guard !isBackendReset else {
             return // Skip processing until user is ready for next sequence
@@ -286,14 +372,50 @@ struct BlinkDetectionView: View {
             
             // Update UI with response
             DispatchQueue.main.async {
-                currentSequence = response.currentSequence
-                if let word = response.completedWord {
-                    lastWord = word
-                    // Start polling for translation when word is completed
-                    startTranslationPolling()
+                // On first frame after reset, ignore any non-empty sequence (it's old persisted data)
+                if firstFrameAfterReset {
+                    if !response.currentSequence.isEmpty {
+                        let sequenceString = response.currentSequence.joined(separator: " ")
+                        print("⚠️ Ignoring old persisted sequence on first frame: [\(sequenceString)] (length: \(response.currentSequence.count))")
+                        // Force clear UI immediately
+                        currentSequence = []
+                        lastWord = ""
+                        // Stop any ongoing polling from old persisted sequences
+                        isPolling = false
+                        pollCount = 0
+                        // Ensure we don't show any old data
+                        resultWord = ""
+                    } else {
+                        currentSequence = []
+                        lastWord = ""
+                    }
+                    firstFrameAfterReset = false  // Only check first frame
                 } else {
-                    lastWord = response.lastWord ?? ""
+                    // After first frame, process normally
+                    // Ignore sequences that are longer than max length (4) - these are old persisted data
+                    if response.currentSequence.count > 4 {
+                        let sequenceString = response.currentSequence.joined(separator: " ")
+                        print("⚠️ Ignoring old persisted sequence (too long): [\(sequenceString)] (length: \(response.currentSequence.count))")
+                        currentSequence = []
+                        lastWord = ""
+                    } else if !response.currentSequence.isEmpty {
+                        // Valid new sequence
+                        currentSequence = response.currentSequence
+                        // Only set lastWord if we have a valid new sequence
+                        if let word = response.completedWord {
+                            lastWord = word
+                            // Start polling for translation when word is completed
+                            startTranslationPolling()
+                        } else {
+                            lastWord = response.lastWord ?? ""
+                        }
+                    } else {
+                        // Backend returned empty sequence, ensure UI is also empty
+                        currentSequence = []
+                        lastWord = ""
+                    }
                 }
+                
                 blinkClass = response.blinkEvents > 0 ? "Detected" : ""
                 isProcessing = false
             }
@@ -383,6 +505,7 @@ struct BlinkDetectionView: View {
         currentSequence = []
         lastWord = ""
         isBackendReset = false
+        isResetComplete = true  // Ensure processing is enabled
         print("✅ Ready for next sequence")
     }
 }

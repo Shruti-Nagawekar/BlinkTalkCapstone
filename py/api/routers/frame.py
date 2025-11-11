@@ -259,7 +259,14 @@ async def process_frame_for_blinks(request: FrameRequest) -> Dict[str, Any]:
         
         ear_value = eye_tracker.calculate_ear(frame)
         
+        print(f"📷 DEBUG: Frame processed, EAR={ear_value}, sequence_length={len(sequence_engine.get_current_sequence())}")
+        
         if ear_value is None:
+            print(f"⚠️ DEBUG: No eyes detected (camera covered?), resetting blink classifier state")
+            # Reset blink classifier state when eyes not detected (camera covered)
+            blink_classifier.state.is_blinking = False
+            blink_classifier.state.blink_start_time = None
+            blink_classifier.state.blink_start_ear = None
             return {
                 "success": False,
                 "message": "Could not detect eyes in frame",
@@ -272,6 +279,7 @@ async def process_frame_for_blinks(request: FrameRequest) -> Dict[str, Any]:
         # Process EAR through blink classifier
         timestamp = time.time()
         blink_events = blink_classifier.process_ear_sample(ear_value, timestamp)
+        print(f"👁️ DEBUG: Blink classifier returned {len(blink_events)} new blink events")
         
         # Process blink events through sequence engine
         word_gap_detected = False
@@ -279,17 +287,29 @@ async def process_frame_for_blinks(request: FrameRequest) -> Dict[str, Any]:
         
         for event in blink_events:
             if event.blink_type == BlinkType.SHORT:
+                print(f"➕ DEBUG: Adding SHORT blink to sequence")
                 sequence_engine.add_blink("S")
             elif event.blink_type == BlinkType.LONG:
+                print(f"➕ DEBUG: Adding LONG blink to sequence")
                 sequence_engine.add_blink("L")
+        
+        # Check if sequence was auto-finalized due to max length
+        if sequence_engine.is_sequence_complete():
+            completed_word = sequence_engine.get_last_word()
+            print(f"🎯 DEBUG: Sequence auto-finalized at max length, word: '{completed_word}'")
         
         # Check for word gaps
         recent_gaps = blink_classifier.get_recent_gaps(max_events=1)
         if recent_gaps and recent_gaps[0].gap_type == GapType.WORD_GAP:
             word_gap_detected = True
+            print(f"⏸️ DEBUG: Word gap detected, finalizing sequence")
             completed_word = sequence_engine.finalize_sequence()
             if completed_word:
                 logger.info(f"Word completed via word gap: '{completed_word}'")
+                print(f"✅ DEBUG: Word completed via word gap: '{completed_word}'")
+        
+        current_seq = sequence_engine.get_current_sequence()
+        print(f"📊 DEBUG: Current sequence: {current_seq}, length: {len(current_seq)}, complete: {sequence_engine.is_sequence_complete()}")
         
         return {
             "success": True,

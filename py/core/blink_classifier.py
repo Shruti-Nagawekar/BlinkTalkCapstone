@@ -84,12 +84,12 @@ class BlinkClassifier:
         else:
             return self.thresholds
     
-    def process_ear_sample(self, ear_value: float, timestamp: Optional[float] = None) -> List[BlinkEvent]:
+    def process_ear_sample(self, ear_value: Optional[float], timestamp: Optional[float] = None) -> List[BlinkEvent]:
         """
         Process a single EAR sample and return any new blink events.
         
         Args:
-            ear_value: Current EAR value
+            ear_value: Current EAR value (None if eyes not detected)
             timestamp: Timestamp of the sample (defaults to current time)
             
         Returns:
@@ -100,11 +100,23 @@ class BlinkClassifier:
         
         new_events = []
         
+        # If EAR is None (eyes not detected/camera covered), reset blink state
+        if ear_value is None:
+            if self.state.is_blinking:
+                print(f"🔴 DEBUG: EAR=None (eyes not detected), resetting blink state. Was blinking: {self.state.is_blinking}")
+                self.state.is_blinking = False
+                self.state.blink_start_time = None
+                self.state.blink_start_ear = None
+            return new_events
+        
         # Get current thresholds (may change if calibration profile changes)
         thresholds = self._get_thresholds()
         
+        print(f"🔵 DEBUG: EAR={ear_value:.3f}, threshold={self.ear_threshold:.3f}, is_blinking={self.state.is_blinking}")
+        
         # Check for blink start
         if not self.state.is_blinking and ear_value < self.ear_threshold:
+            print(f"🟢 DEBUG: Blink START detected (EAR={ear_value:.3f} < {self.ear_threshold:.3f})")
             self.state.is_blinking = True
             self.state.blink_start_time = timestamp
             self.state.blink_start_ear = ear_value
@@ -114,14 +126,19 @@ class BlinkClassifier:
             if self.state.blink_start_time is not None:
                 duration_ms = (timestamp - self.state.blink_start_time) * 1000
                 
+                print(f"🟡 DEBUG: Blink END detected (duration={duration_ms:.1f}ms, EAR={ear_value:.3f})")
+                
                 # Classify blink type based on duration
                 if duration_ms <= thresholds["short_max_ms"]:
                     blink_type = BlinkType.SHORT
+                    print(f"✅ DEBUG: Classified as SHORT blink ({duration_ms:.1f}ms <= {thresholds['short_max_ms']}ms)")
                 elif (thresholds["long_min_ms"] <= duration_ms <= 
                       thresholds["long_max_ms"]):
                     blink_type = BlinkType.LONG
+                    print(f"✅ DEBUG: Classified as LONG blink ({thresholds['long_min_ms']}ms <= {duration_ms:.1f}ms <= {thresholds['long_max_ms']}ms)")
                 else:
                     # Duration too long, treat as noise or invalid
+                    print(f"⚠️ DEBUG: Blink duration too long ({duration_ms:.1f}ms), ignoring as noise")
                     self.state.is_blinking = False
                     self.state.blink_start_time = None
                     self.state.blink_start_ear = None
@@ -137,6 +154,7 @@ class BlinkClassifier:
                 
                 self.events.append(event)
                 new_events.append(event)
+                print(f"📝 DEBUG: Created {blink_type.value} blink event, total events: {len(self.events)}")
                 
                 # Update state
                 self.state.last_blink_time = timestamp
