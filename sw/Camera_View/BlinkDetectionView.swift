@@ -27,6 +27,8 @@ struct BlinkDetectionView: View {
     @State private var isBackendReset: Bool = false  // Track if backend is reset but UI persists
     @State private var isResetComplete: Bool = false  // Track if backend reset has completed
     @State private var firstFrameAfterReset: Bool = true  // Track if this is the first frame after reset
+    @State private var framesAfterReset: Int = 0  // Count frames after reset to ignore first few
+    @State private var resetTime: Date = Date.distantPast  // Track when reset happened
     
     @StateObject private var cameraManager = BackgroundCameraManager()
     @StateObject private var frameProcessor = FrameProcessor()
@@ -182,23 +184,11 @@ struct BlinkDetectionView: View {
                 
                 // Status Information
                 VStack(spacing: 8) {
-                    if isProcessing {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                            .padding()
-                    }
-                    
                     if let error = errorMessage {
                         Text("Error: \(error)")
                             .font(.caption)
                             .foregroundColor(.red)
                             .padding(.horizontal)
-                    }
-                    
-                    if !blinkClass.isEmpty {
-                        Text("Blink: \(blinkClass)")
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.8))
                     }
                     
                     if earValue > 0 {
@@ -216,13 +206,15 @@ struct BlinkDetectionView: View {
             }
         }
         .onAppear {
-            // Clear ALL UI state immediately to prevent showing old persisted sequence
+            // Clear UI state
             currentSequence = []
             lastWord = ""
             resultWord = ""
             isBackendReset = false
             isResetComplete = false  // Block frame processing until reset is done
             firstFrameAfterReset = true  // Mark that we're waiting for first frame after reset
+            framesAfterReset = 0  // Reset frame counter
+            resetTime = Date()  // Record reset time
             isPolling = false
             pollCount = 0
             errorMessage = nil
@@ -230,26 +222,28 @@ struct BlinkDetectionView: View {
             // Reset backend sequence when view appears to start fresh
             Task {
                 do {
-                    _ = try await translationEndpoint.resetSequence()
-                    print("✅ Backend sequence reset on view appear")
-                    // Ensure UI is completely cleared and allow frame processing after backend reset
+                    print("🔄 Calling backend reset...")
+                    let resetResponse = try await translationEndpoint.resetSequence()
+                    print("✅ Backend sequence reset on view appear: \(resetResponse.message ?? "success")")
+                    
+                    // Verify reset worked by checking sequence state
+                    // Add a delay to ensure reset is fully processed
+                    try await Task.sleep(nanoseconds: 200_000_000) // 0.2 second - longer delay
+                    
+                    // Allow frame processing after backend reset
                     await MainActor.run {
-                        // Force clear everything again after reset
-                        currentSequence = []
-                        lastWord = ""
-                        resultWord = ""
-                        isPolling = false
-                        pollCount = 0
-                        isResetComplete = true  // Now allow frame processing
+                        isResetComplete = true
+                        resetTime = Date()  // Update reset time when reset completes
+                        framesAfterReset = 0  // Reset frame counter
+                        print("✅ Frame processing enabled after reset (resetTime: \(resetTime))")
                     }
                 } catch {
                     print("⚠️ Failed to reset sequence on appear: \(error.localizedDescription)")
                     // Even if reset fails, allow processing (backend might be clean)
                     await MainActor.run {
-                        // Still clear UI state
-                        currentSequence = []
-                        lastWord = ""
                         isResetComplete = true
+                        resetTime = Date()
+                        framesAfterReset = 0
                     }
                 }
             }
@@ -262,7 +256,6 @@ struct BlinkDetectionView: View {
             }
         }
         .onDisappear {
-            // Stop camera when view disappears to prevent multiple input errors
             cameraManager.stopCapture()
         }
         .onChange(of: cameraManager.frameStatus) { oldValue, newValue in
@@ -280,13 +273,16 @@ struct BlinkDetectionView: View {
     
     private func checkCameraPermission() {
         cameraPermissionStatus = AVCaptureDevice.authorizationStatus(for: .video)
+        print("📷 Camera permission status: \(cameraPermissionStatus.rawValue) (0=notDetermined, 1=restricted, 2=denied, 3=authorized)")
         
         if cameraPermissionStatus == .authorized {
-            // Start camera on background thread
-            DispatchQueue.global(qos: .userInitiated).async {
+            print("✅ Camera permission granted, starting camera")
+            // Start camera on background thread with a small delay to ensure view is stable
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.1) {
                 self.cameraManager.startCapture()
             }
         } else if cameraPermissionStatus == .notDetermined {
+            print("❓ Camera permission not determined, requesting...")
             AVCaptureDevice.requestAccess(for: .video) { granted in
                 DispatchQueue.main.async {
                     if granted {
@@ -324,24 +320,42 @@ struct BlinkDetectionView: View {
     private func processFrame(_ frame: CMSampleBuffer) async {
         // Don't process frames until backend reset is complete
         guard isResetComplete else {
+            print("⏸️ Frame skipped: waiting for backend reset to complete")
             return // Skip processing until reset is complete
         }
         
         // Don't process frames if backend is reset (waiting for user to be ready)
         guard !isBackendReset else {
+            print("⏸️ Frame skipped: backend reset, waiting for user to be ready")
             return // Skip processing until user is ready for next sequence
+        }
+        
+        // Ignore first 3 frames after reset to ensure backend is clean
+        // Also ignore frames within 0.5 seconds of reset
+        let timeSinceReset = Date().timeIntervalSince(resetTime)
+        if framesAfterReset < 3 || timeSinceReset < 0.5 {
+            framesAfterReset += 1
+            print("⏸️ Frame #\(framesAfterReset) skipped: too soon after reset (time: \(String(format: "%.2f", timeSinceReset))s)")
+            return
         }
         
         // Throttle frame sending - only send every 200ms (5 FPS)
         let now = Date()
         let timeSinceLastFrame = now.timeIntervalSince(lastFrameSentTime)
         guard timeSinceLastFrame >= frameSendInterval else {
+            // Log throttled frames occasionally (every 10th frame or so)
+            if Int.random(in: 0..<10) == 0 {
+                print("⏸️ Frame throttled (last sent \(String(format: "%.2f", timeSinceLastFrame))s ago)")
+            }
             return // Skip this frame
         }
         
         lastFrameSentTime = now
         
-        guard !isProcessing else { return } // Don't process if already processing
+        guard !isProcessing else {
+            print("⏸️ Frame skipped: already processing a frame")
+            return // Don't process if already processing
+        }
         isProcessing = true
         
         do {
@@ -363,6 +377,9 @@ struct BlinkDetectionView: View {
             
             let base64String = imageData.base64EncodedString()
             
+            // Log frame sending
+            print("📤 Sending frame to backend (size: \(imageData.count) bytes, base64: \(base64String.count) chars)")
+            
             // Send frame to backend for processing
             let frameEndpoint = FrameEndpoint()
             let response = try await frameEndpoint.processFrame(
@@ -370,26 +387,28 @@ struct BlinkDetectionView: View {
                 user: "user" // TODO: Get from profile
             )
             
+            // Log response
+            print("📥 Received response: EAR=\(response.earValue ?? -1), blinks=\(response.blinkEvents), sequence=\(response.currentSequence)")
+            
             // Update UI with response
             DispatchQueue.main.async {
-                // On first frame after reset, ignore any non-empty sequence (it's old persisted data)
+                // On first frame after reset, ALWAYS ignore any sequence (it's old persisted data)
                 if firstFrameAfterReset {
-                    if !response.currentSequence.isEmpty {
+                    // Force clear everything - don't trust the backend response on first frame
+                    if !response.currentSequence.isEmpty || !(response.lastWord ?? "").isEmpty {
                         let sequenceString = response.currentSequence.joined(separator: " ")
-                        print("⚠️ Ignoring old persisted sequence on first frame: [\(sequenceString)] (length: \(response.currentSequence.count))")
-                        // Force clear UI immediately
-                        currentSequence = []
-                        lastWord = ""
-                        // Stop any ongoing polling from old persisted sequences
-                        isPolling = false
-                        pollCount = 0
-                        // Ensure we don't show any old data
-                        resultWord = ""
-                    } else {
-                        currentSequence = []
-                        lastWord = ""
+                        print("⚠️ FORCING CLEAR: First frame after reset has data - sequence: [\(sequenceString)], lastWord: '\(response.lastWord ?? "")' - IGNORING")
                     }
+                    // Force clear UI immediately regardless of response
+                    currentSequence = []
+                    lastWord = ""
+                    // Stop any ongoing polling from old persisted sequences
+                    isPolling = false
+                    pollCount = 0
+                    // Ensure we don't show any old data
+                    resultWord = ""
                     firstFrameAfterReset = false  // Only check first frame
+                    print("✅ First frame processed - UI cleared, ready for new sequence")
                 } else {
                     // After first frame, process normally
                     // Ignore sequences that are longer than max length (4) - these are old persisted data
@@ -421,6 +440,10 @@ struct BlinkDetectionView: View {
             }
             
         } catch {
+            print("❌ Error processing frame: \(error.localizedDescription)")
+            if let apiError = error as? APIError {
+                print("   API Error details: \(apiError.errorDescription ?? "unknown")")
+            }
             DispatchQueue.main.async {
                 errorMessage = error.localizedDescription
                 isProcessing = false
@@ -501,12 +524,40 @@ struct BlinkDetectionView: View {
     }
     
     private func readyForNextSequence() {
-        // Clear UI and allow new sequence
-        currentSequence = []
-        lastWord = ""
-        isBackendReset = false
-        isResetComplete = true  // Ensure processing is enabled
-        print("✅ Ready for next sequence")
+        // Reset backend again to ensure it's clean, then clear UI
+        Task {
+            do {
+                print("🔄 Resetting backend before ready for next sequence...")
+                _ = try await translationEndpoint.resetSequence()
+                print("✅ Backend reset before ready")
+                // Add a small delay to ensure reset is processed
+                try await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
+                
+                await MainActor.run {
+                    // Clear UI and allow new sequence
+                    currentSequence = []
+                    lastWord = ""
+                    isBackendReset = false
+                    isResetComplete = true
+                    resetTime = Date()  // Update reset time
+                    framesAfterReset = 0  // Reset frame counter
+                    firstFrameAfterReset = true  // Mark first frame after reset
+                    print("✅ Ready for next sequence - backend reset and UI cleared")
+                }
+            } catch {
+                print("⚠️ Failed to reset before ready: \(error.localizedDescription)")
+                // Still clear UI even if reset fails
+                await MainActor.run {
+                    currentSequence = []
+                    lastWord = ""
+                    isBackendReset = false
+                    isResetComplete = true
+                    resetTime = Date()
+                    framesAfterReset = 0
+                    firstFrameAfterReset = true
+                }
+            }
+        }
     }
 }
 
@@ -536,106 +587,122 @@ class BackgroundCameraManager: NSObject, ObservableObject {
     
     private let session = AVCaptureSession()
     private let output = AVCaptureVideoDataOutput()
-    private var isRunning = false
     private let sessionQueue = DispatchQueue(label: "CameraSessionQueue")
+    private var frameCount = 0  // Track frame count for debugging
     
     func startCapture() {
         sessionQueue.async {
-            // Always stop and clean up first to prevent multiple inputs
+            print("🔍 DEBUG: startCapture() called")
+            print("   Session isRunning: \(self.session.isRunning)")
+            print("   Session isInterrupted: \(self.session.isInterrupted)")
+            
+            // Stop if already running
             if self.session.isRunning {
+                print("   Stopping existing session...")
                 self.session.stopRunning()
-                // Wait a moment for session to fully stop
-                Thread.sleep(forTimeInterval: 0.1)
+                Thread.sleep(forTimeInterval: 0.2)
             }
             
+            // Simple setup - bare minimum
+            print("   Beginning configuration...")
             self.session.beginConfiguration()
             self.session.sessionPreset = .high
             
-            // Remove existing inputs first (critical to prevent multiple input error)
-            let existingInputs = self.session.inputs
-            for input in existingInputs {
+            // Remove existing inputs/outputs
+            print("   Removing \(self.session.inputs.count) inputs, \(self.session.outputs.count) outputs")
+            for input in self.session.inputs {
                 self.session.removeInput(input)
             }
-            
-            // Remove existing outputs first
-            let existingOutputs = self.session.outputs
-            for output in existingOutputs {
+            for output in self.session.outputs {
                 self.session.removeOutput(output)
             }
             
             // Setup camera
-            guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front),
-                  let input = try? AVCaptureDeviceInput(device: camera) else {
+            print("   Getting camera device...")
+            guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front) else {
                 self.session.commitConfiguration()
                 DispatchQueue.main.async {
                     self.frameStatus = .error("Unable to access camera")
                 }
-                self.isRunning = false
+                print("❌ DEBUG: Failed to get camera device")
+                return
+            }
+            print("   Camera device found: \(camera.localizedName)")
+            
+            guard let input = try? AVCaptureDeviceInput(device: camera) else {
+                self.session.commitConfiguration()
+                DispatchQueue.main.async {
+                    self.frameStatus = .error("Unable to create camera input")
+                }
+                print("❌ DEBUG: Failed to create camera input")
                 return
             }
             
-            // Only add input if session can accept it
             guard self.session.canAddInput(input) else {
                 self.session.commitConfiguration()
                 DispatchQueue.main.async {
                     self.frameStatus = .error("Cannot add camera input")
                 }
-                self.isRunning = false
+                print("❌ DEBUG: Cannot add input to session")
                 return
             }
             
+            print("   Adding camera input...")
             self.session.addInput(input)
             
             // Setup output
+            print("   Configuring output...")
             self.output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
             self.output.setSampleBufferDelegate(self, queue: DispatchQueue(label: "CameraQueue"))
             
             guard self.session.canAddOutput(self.output) else {
-                self.session.removeInput(input) // Clean up input if output fails
+                self.session.removeInput(input)
                 self.session.commitConfiguration()
                 DispatchQueue.main.async {
                     self.frameStatus = .error("Cannot add camera output")
                 }
-                self.isRunning = false
+                print("DEBUG: Cannot add output to session")
                 return
             }
             
+            print("   Adding output...")
             self.session.addOutput(self.output)
             self.session.commitConfiguration()
+            print("   Configuration committed")
             
-            // Start running after configuration is committed
+            // Start running
+            print("   Calling startRunning()...")
             self.session.startRunning()
-            self.isRunning = true
             
-            DispatchQueue.main.async {
-                print("✅ Background camera started")
+            // Check if it actually started
+            Thread.sleep(forTimeInterval: 0.5)
+            print("   After 0.5s - isRunning: \(self.session.isRunning), isInterrupted: \(self.session.isInterrupted)")
+            
+            if self.session.isRunning {
+                print("✅ Camera started successfully")
+            } else {
+                print("⚠️ Camera session not running after startRunning()")
+                if self.session.isInterrupted {
+                    print("   Session is interrupted!")
+                }
             }
         }
     }
     
     func stopCapture() {
         sessionQueue.async {
-            guard self.isRunning else { return }
+            guard self.session.isRunning else { return }
             
             self.session.beginConfiguration()
-            
-            // Remove all inputs
             for input in self.session.inputs {
                 self.session.removeInput(input)
             }
-            
-            // Remove all outputs
             for output in self.session.outputs {
                 self.session.removeOutput(output)
             }
-            
             self.session.commitConfiguration()
             self.session.stopRunning()
-            self.isRunning = false
-            
-            DispatchQueue.main.async {
-                print("✅ Background camera stopped")
-            }
+            print("✅ Camera stopped")
         }
     }
     
@@ -649,11 +716,29 @@ extension BackgroundCameraManager: AVCaptureVideoDataOutputSampleBufferDelegate 
         DispatchQueue.main.async {
             self.frameStatus = .processing
         }
-        onFrameCaptured?(sampleBuffer)
+        
+        // Debug: Log first few frames to confirm capture is working
+        self.frameCount += 1
+        if self.frameCount <= 5 {
+            print("📹 DEBUG: Frame #\(self.frameCount) captured! Callback set: \(self.onFrameCaptured != nil)")
+        } else if self.frameCount % 30 == 0 {
+            print("📹 DEBUG: Frame #\(self.frameCount) captured")
+        }
+        
+        guard let callback = onFrameCaptured else {
+            if self.frameCount <= 10 {
+                print("⚠️ DEBUG: Frame #\(self.frameCount) captured but callback is nil!")
+            }
+            return
+        }
+        callback(sampleBuffer)
     }
     
     func captureOutput(_ output: AVCaptureOutput, didDrop sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        // Handle dropped frames silently
+        // Log dropped frames occasionally
+        if Int.random(in: 0..<50) == 0 {
+            print("⚠️ Frame dropped by camera")
+        }
     }
 }
 
@@ -661,4 +746,5 @@ extension BackgroundCameraManager: AVCaptureVideoDataOutputSampleBufferDelegate 
 class FrameProcessor: ObservableObject {
     @Published var isProcessing = false
 }
+
 

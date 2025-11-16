@@ -201,6 +201,7 @@ async def process_frame_for_blinks(request: FrameRequest) -> Dict[str, Any]:
     Returns:
         Dictionary with processing results including blink events and sequence state
     """
+    logger.info(f"📥 Received frame processing request from user={request.user}, frame_size={len(request.frame_b64)} chars")
     try:
         # Decode frame
         try:
@@ -259,10 +260,10 @@ async def process_frame_for_blinks(request: FrameRequest) -> Dict[str, Any]:
         
         ear_value = eye_tracker.calculate_ear(frame)
         
-        print(f"📷 DEBUG: Frame processed, EAR={ear_value}, sequence_length={len(sequence_engine.get_current_sequence())}")
+        logger.info(f"📷 Frame processed: user={request.user}, EAR={ear_value}, sequence_length={len(sequence_engine.get_current_sequence())}")
         
         if ear_value is None:
-            print(f"⚠️ DEBUG: No eyes detected (camera covered?), resetting blink classifier state")
+            logger.warning(f"⚠️ No eyes detected (camera covered?), resetting blink classifier state")
             # Reset blink classifier state when eyes not detected (camera covered)
             blink_classifier.state.is_blinking = False
             blink_classifier.state.blink_start_time = None
@@ -279,7 +280,7 @@ async def process_frame_for_blinks(request: FrameRequest) -> Dict[str, Any]:
         # Process EAR through blink classifier
         timestamp = time.time()
         blink_events = blink_classifier.process_ear_sample(ear_value, timestamp)
-        print(f"👁️ DEBUG: Blink classifier returned {len(blink_events)} new blink events")
+        logger.info(f"👁️ Blink classifier returned {len(blink_events)} new blink events for user={request.user}")
         
         # Process blink events through sequence engine
         word_gap_detected = False
@@ -287,39 +288,53 @@ async def process_frame_for_blinks(request: FrameRequest) -> Dict[str, Any]:
         
         for event in blink_events:
             if event.blink_type == BlinkType.SHORT:
-                print(f"➕ DEBUG: Adding SHORT blink to sequence")
+                logger.info(f"➕ Adding SHORT blink to sequence for user={request.user}")
                 sequence_engine.add_blink("S")
             elif event.blink_type == BlinkType.LONG:
-                print(f"➕ DEBUG: Adding LONG blink to sequence")
+                logger.info(f"➕ Adding LONG blink to sequence for user={request.user}")
                 sequence_engine.add_blink("L")
         
         # Check if sequence was auto-finalized due to max length
         if sequence_engine.is_sequence_complete():
             completed_word = sequence_engine.get_last_word()
-            print(f"🎯 DEBUG: Sequence auto-finalized at max length, word: '{completed_word}'")
+            logger.info(f"🎯 Sequence auto-finalized at max length, word: '{completed_word}' for user={request.user}")
         
         # Check for word gaps
         recent_gaps = blink_classifier.get_recent_gaps(max_events=1)
         if recent_gaps and recent_gaps[0].gap_type == GapType.WORD_GAP:
             word_gap_detected = True
-            print(f"⏸️ DEBUG: Word gap detected, finalizing sequence")
+            logger.info(f"⏸️ Word gap detected, finalizing sequence for user={request.user}")
             completed_word = sequence_engine.finalize_sequence()
             if completed_word:
-                logger.info(f"Word completed via word gap: '{completed_word}'")
-                print(f"✅ DEBUG: Word completed via word gap: '{completed_word}'")
+                logger.info(f"✅ Word completed via word gap: '{completed_word}' for user={request.user}")
         
         current_seq = sequence_engine.get_current_sequence()
-        print(f"📊 DEBUG: Current sequence: {current_seq}, length: {len(current_seq)}, complete: {sequence_engine.is_sequence_complete()}")
+        is_complete = sequence_engine.is_sequence_complete()
+        last_word = sequence_engine.get_last_word()
+        logger.debug(f"📊 Current sequence: {current_seq}, length: {len(current_seq)}, complete: {is_complete}, last_word: '{last_word}' for user={request.user}")
+        
+        # If sequence is complete, return empty sequence (it's already been processed)
+        # Also return empty if we have a last_word but no new blinks were detected (stale state)
+        # The completed_word or last_word will contain the result
+        if is_complete:
+            sequence_to_return = []
+            logger.debug(f"🔄 Returning empty sequence because sequence is complete (word: '{last_word}')")
+        elif last_word and len(blink_events) == 0:
+            # If we have a last_word but no new blinks, this is stale state - return empty
+            sequence_to_return = []
+            logger.debug(f"🔄 Returning empty sequence because stale state (last_word: '{last_word}', no new blinks)")
+        else:
+            sequence_to_return = current_seq
         
         return {
             "success": True,
             "ear_value": ear_value,
             "blink_events": len(blink_events),
-            "current_sequence": sequence_engine.get_current_sequence(),
+            "current_sequence": sequence_to_return,  # Return empty if complete
             "word_gap_detected": word_gap_detected,
-            "sequence_complete": sequence_engine.is_sequence_complete(),
+            "sequence_complete": is_complete,
             "completed_word": completed_word,
-            "last_word": sequence_engine.get_last_word() if sequence_engine.is_sequence_complete() else ""
+            "last_word": sequence_engine.get_last_word() if is_complete else ""
         }
         
     except HTTPException:

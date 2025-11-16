@@ -190,11 +190,12 @@ class SequenceEngine:
     
     def clear_sequence(self) -> None:
         """Clear the current sequence and reset state."""
-        logger.debug(f"Clearing sequence: {self.current_sequence}")
-        print(f"🧹 DEBUG: Clearing sequence: {self.current_sequence}, was complete: {self.sequence_complete}")
+        logger.debug(f"Clearing sequence: {self.current_sequence}, last_word: {self.last_word}")
+        print(f"🧹 DEBUG: Clearing sequence: {self.current_sequence}, last_word: '{self.last_word}', was complete: {self.sequence_complete}")
         self.current_sequence = []
         self.sequence_complete = False
-        print(f"✅ DEBUG: Sequence cleared, ready for new blinks")
+        self.last_word = ""  # Also clear last_word to prevent old words from persisting
+        print(f"✅ DEBUG: Sequence and last_word cleared, ready for new blinks")
     
     def get_current_sequence(self) -> List[str]:
         """Get the current sequence as a list of blink types."""

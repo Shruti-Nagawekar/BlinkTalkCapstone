@@ -160,16 +160,31 @@ async def reset_sequence() -> Dict[str, str]:
         engine = get_sequence_engine()
         classifier = get_blink_classifier()
         
+        # Log state before reset
+        old_sequence = engine.get_current_sequence()
+        old_word = engine.get_last_word()
         print(f"🔄 DEBUG: Resetting sequence and classifier state")
+        print(f"   Before reset - sequence: {old_sequence}, last_word: '{old_word}'")
+        
         engine.clear_sequence()
         classifier.reset()
         
+        # Verify reset worked
+        new_sequence = engine.get_current_sequence()
+        new_word = engine.get_last_word()
+        print(f"   After reset - sequence: {new_sequence}, last_word: '{new_word}'")
+        
+        if new_sequence or new_word:
+            print(f"⚠️ WARNING: Reset may not have worked completely - sequence: {new_sequence}, word: '{new_word}'")
+        else:
+            print(f"✅ DEBUG: Sequence and classifier reset successfully - confirmed empty")
+        
         logger.info("Sequence and classifier state reset")
-        print(f"✅ DEBUG: Sequence and classifier reset successfully")
         return {"message": "Sequence reset successfully"}
         
     except Exception as e:
         logger.error(f"Error resetting sequence: {str(e)}")
+        print(f"❌ ERROR resetting sequence: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail="Internal server error resetting sequence"
